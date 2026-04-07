@@ -2,6 +2,7 @@ import uuid
 import logging
 from fastapi import FastAPI, UploadFile, File, HTTPException, status, Depends
 from fastapi.middleware.cors import CORSMiddleware
+from mangum import Mangum
 
 from . import aws_client
 from .config import settings
@@ -52,7 +53,7 @@ async def get_current_client_id() -> str:
 
 @app.get("/health", tags=["System"])
 async def health_check():
-    return {"status": "healthy", "version": app.version}
+    return {"status": "healthy", "version": app.version, "environment": "lambda"}
 
 
 @app.post("/process-pdf", status_code=status.HTTP_202_ACCEPTED, tags=["Processing"])
@@ -110,3 +111,8 @@ async def get_status(job_id: str, client_id: str = Depends(get_current_client_id
         "status": "processing",
         "message": "The AI is currently reviewing the document"
     }
+
+
+# The Mangum handler
+
+handler = Mangum(app)

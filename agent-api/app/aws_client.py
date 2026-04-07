@@ -36,6 +36,7 @@ except Exception as e:
 # Service functions
 
 def upload_pdf_to_s3(file_obj: BinaryIO, object_name: str) -> bool:
+    """Uploads a file to S3 with mandatory AES256 encryption at rest"""
     try:
         logger.info(f"Attempting to upload '{object_name}' to S3 bucket '{settings.s3_bucket_name}'.")
 
@@ -48,22 +49,25 @@ def upload_pdf_to_s3(file_obj: BinaryIO, object_name: str) -> bool:
                 "ServerSideEncryption": "AES256"
             }
         )
-
-        logger.info(f"Successfully uploaded '{object_name}' to S3.")
         return True
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        error_msg = e.response["Error"]["Message"]
-        logger.error(f"S3 ClientError [{error_code}]: {error_msg} - Object: {object_name}.")
+    except (ClientError, BotoCoreError) as e:
+        logger.error(f"S3 Upload failed for {object_name}: {str(e)}")
         return False
-    except BotoCoreError as e:
-        logger.error(f"S3 BotoCoreError: {str(e)} - Object: {object_name}.")
-        return False
+
+
+
+def delete_pdf_object(object_name: str):
+    """Cleanup function to remove files if the pipeline fails"""
+    try:
+        d3_client.delete_object(Bucket=settings.s3_bucket_name, Key=object_name)
+        logger.info(f"Successfully cleaned up S3 object {object_name}: {str(e)}")
     except Exception as e:
-        logger.exception(f"Unexpected error uploading to S3: {str(e)}")
-        return False
+        logger.error(f"Failed to cleanup S3 object {object_name}: {str(e)}")
+
+
 
 def send_job_to_sqs(job_id: str, s3_key: str, client_id: str) -> Optional[str]:
+    """Queues a job with a structured JSON payload"""
     payload = {
         "job_id": job_id, 
         "s3_bucket": settings.s3_bucket_name,
@@ -73,26 +77,13 @@ def send_job_to_sqs(job_id: str, s3_key: str, client_id: str) -> Optional[str]:
     }
 
     try:
-        logger.info(f"Sending job '{job_id}' to SQS client '{client_id}'.")
-
         response = sqs_client.send_message(
             QueueUrl=settings.sqs_queue_url,
             MessageBody=json.dumps(payload)
         )
 
-        message_id = response.get("MessageId")
-        logger.info(f"Successfully queued job '{job_id}'. SQS MessageId: {message_id}.")
-        return message_id
-    except ClientError as e:
-        error_code = e.response["Error"]["Code"]
-        error_msg = e.response["Error"]["Message"]
-        logger.error(f"SQS ClientError [{error_code}]: {error_msg} - JobID: {job_id}.")
-        return None
-    except BotoCoreError as e:
-        logger.error(f"SQS BotoCoreError: {str(e)} - JobID: {job_id}.")
-        return None
-    except Exception as e:
-        logger.exception(f"Unexpected error sending message to SQS: {str(e)}.")
+        return response.get("MessageId")
+    except (ClientError, BotoCoreError) as e:
+        logger.error(f"SQS queueing failed for {job_id}: {str(e)}")
         return None
         
-
