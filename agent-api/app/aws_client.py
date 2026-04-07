@@ -6,15 +6,10 @@ from botocore.exceptions import ClientError, BotoCoreError
 from typing import BinaryIO, Optional
 from .config import settings
 
-# Setting up logging
+# Setting up logging for module
 
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-
-ch = logging.StreamHandler()
-ch.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-if not logger.handlers:
-    logger.addHandler(ch)
+logger.addHandler(logging.NullHandler())
 
 
 # Initialize AWS clients
@@ -34,7 +29,6 @@ try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
     sqs_client = session.client("sqs", config=aws_config)
-    logger.info("AWS Boto3 Session and Clients initialized successfully.")
 except Exception as e:
     logger.critical(f"Failed to initialize AWS Session: {str(e)}.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
@@ -43,7 +37,7 @@ except Exception as e:
 
 def upload_pdf_to_s3(file_obj: BinaryIO, object_name: str) -> bool:
     try:
-        logger.info(f"Attempting to upload '{object_name}' to S3 bucket '{setting.s3_bucket_name}'.")
+        logger.info(f"Attempting to upload '{object_name}' to S3 bucket '{settings.s3_bucket_name}'.")
 
         s3_client.upload_fileobj(
             file_obj,

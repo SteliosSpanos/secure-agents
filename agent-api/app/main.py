@@ -10,14 +10,17 @@ from .config import settings
 MAX_FILE_SIZE_MB = 10 
 MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
 
-# Setting up the logging
+# Setting up the logging config
 
+# console_handler = logging.StreamHandler()
+# file_handler = logging.FileHandler("app_errors.log")
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+    # handlers=[console_handler, file_handler]
+)
 logger = logging.getLogger(__name__)
-logger.setLevel(logging.INFO)
-ch = logging.StreamHandler()
-ch.setFormatter(logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s"))
-if not logger.handlers:
-    logger.addHandler(ch)
+
 
 # FastAPI app
 
@@ -26,6 +29,7 @@ app = FastAPI(
     description="Zero-trust Document Processing Pipeline",
     version="1.0.0"
 )
+
 
 # Explicity define who can call your API
 
@@ -52,7 +56,7 @@ async def health_check():
 
 
 @app.post("/process-pdf", status_code=status.HTTP_202_ACCEPTED, tags=["Processing"])
-async def process_pdf(
+def process_pdf(
     file: UploadFile=File(...),
     client_id: str=Depends(get_current_client_id)
 ):
@@ -62,7 +66,14 @@ async def process_pdf(
         logger.warning(f"Rejected invalid file type: {file.content_type}.")
         raise HTTPException(
             status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"File exceeds the maximum allowed size of {MAX_FILE_SIZE_MB} MB"
+            detail=f"Only PDF files are supported"
+        )
+
+    if file.size > MAX_FILE_SIZE_BYTES:
+        logger.warning(f"Rejected oversized file: {file.size} bytes.")
+        raise HTTPException(
+            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+            detail=f"File exceeds the max allowed size of {MAX_FILE_SIZE_MB} MB"
         )
 
     job_id = str(uuid.uuid4())
