@@ -1,0 +1,11 @@
+# Web Framework & Server
+fastapi==0.118.3
+uvicorn[standard]==0.37.0
+python-multipart==0.0.22
+
+# AWS Integration
+boto3
+
+# Environment Variables
+pydantic==2.12.0
+pydantic-settings==2.11.0
