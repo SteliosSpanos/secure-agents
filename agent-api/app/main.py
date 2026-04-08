@@ -1,24 +1,18 @@
 import uuid 
 import logging
-from fastapi import FastAPI, UploadFile, File, HTTPException, status, Depends
+import os
+from fastapi import FastAPI, UploadFile, File, HTTPException, status, Depends, Security
+from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
-from mangum import Mangum
 
 from . import aws_client
 from .config import settings
 
-
-MAX_FILE_SIZE_MB = 10 
-MAX_FILE_SIZE_BYTES = MAX_FILE_SIZE_MB * 1024 * 1024
-
 # Setting up the logging config
 
-# console_handler = logging.StreamHandler()
-# file_handler = logging.FileHandler("app_errors.log")
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
-    # handlers=[console_handler, file_handler]
 )
 logger = logging.getLogger(__name__)
 
@@ -28,91 +22,83 @@ logger = logging.getLogger(__name__)
 app = FastAPI(
     title="Secure AI Agents API",
     description="Zero-trust Document Processing Pipeline",
-    version="1.0.0"
+    version="1.0.1"
 )
+
+
+api_key_header = APIKeyHeader(name=settings.api_key_header_name, auto_error=False)
+
+async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+    """Zero-trust, verify the client's identity before any processing"""
+    if not api_key:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="API key missing from header"
+        )
+    
+    client_id = aws_client.verify_api_key_in_dynamodb(api_key)
+    
+    if not client_id:
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN, 
+            detail="Invalid or inactive API key"
+        )
+    return client_id
 
 
 # Explicity define who can call your API
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # Change to ["https://your-dashboard.com"] in prod
+    allow_origins=["*"], # SECURITY: Restrict this to your specific domain in production
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"]
 )
 
 
-# Mock Auth
-
-async def get_current_client_id() -> str:
-    return "demo_law_firm_01"
-
-
 # Routes
 
-@app.get("/health", tags=["System"])
+@app.get("/health")
 async def health_check():
-    return {"status": "healthy", "version": app.version, "environment": "lambda"}
+    return {"status": "healthy"}
 
 
-@app.post("/process-pdf", status_code=status.HTTP_202_ACCEPTED, tags=["Processing"])
+@app.post("/api/v1/process-pdf", status_code=status.HTTP_202_ACCEPTED)
 def process_pdf(
-    file: UploadFile=File(...),
-    client_id: str=Depends(get_current_client_id)
+    file: UploadFile = File(...),
+    tenant_id: str = Depends(verify_api_key)
 ):
-    logger.info(f"Received file upload request from client '{client_id}': {file.filename}.")
-
     if file.content_type != "application/pdf":
-        logger.warning(f"Rejected invalid file type: {file.content_type}.")
-        raise HTTPException(
-            status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE,
-            detail=f"Only PDF files are supported"
-        )
+        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Only PDFs accepted")
 
-    if file.size > MAX_FILE_SIZE_BYTES:
-        logger.warning(f"Rejected oversized file: {file.size} bytes.")
-        raise HTTPException(
-            status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
-            detail=f"File exceeds the max allowed size of {MAX_FILE_SIZE_MB} MB"
-        )
+    header_bytes = file.file.read(4) # Magic number verification
+    file.file.seek(0)
+
+    if header_bytes != b"%PDF":
+        logger.warning(f"Malicious file attempt from {tenant_id}. Magic bytes: {header_bytes}")
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PDF structure detected")
+
+    max_bytes = settings.max_file_size_mb * 1024 * 1024
+    if file.size > max_bytes:
+        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
 
     job_id = str(uuid.uuid4())
-    s3_key = f"tenant_{client_id}/uploads/{job_id}_{file.filename}"
+    safe_name = os.path.basename(file.filename).replace(" ", "_")
+    s3_key = f"{tenant_id}/uploads/{job_id}/{safe_name}"
 
-    upload_success = aws_client.upload_pdf_to_s3(file.file, s3_key)
-    if not upload_success:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Storage layer error. Failed to dispatch job to AI"
-        )
+    if not aws_client.upload_pdf_to_s3(file.file, s3_key):
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Secure storage failed")
 
-    message_id = aws_client.send_job_to_sqs(job_id, s3_key, client_id)
+    message_id = aws_client.send_job_to_sqs(job_id, s3_key, tenant_id)
+
     if not message_id:
-        raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Queue layer error. Failed to dispatch job to AI"
-        )
+        aws_client.delete_pdf_object(s3_key)
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Job queueing failed. S3 cleanup triggered")
 
-    logger.info(f"Successfully dispatched job '{job_id}' for '{client_id}'")
     return {
-        "status": "queued",
-        "message": "Document securely vaulted and queued for AI analysis",
         "job_id": job_id,
+        "status": "accepted",
+        "vault_path": s3_key,
         "sqs_message_id": message_id
     }
-
-
-@app.get("/status/{job_id}", tags=["Processing"])
-async def get_status(job_id: str, client_id: str = Depends(get_current_client_id)):
-    return {
-        "job_id": job_id,
-        "client_id": client_id,
-        "status": "processing",
-        "message": "The AI is currently reviewing the document"
-    }
-
-
-# The Mangum handler
-
-handler = Mangum(app)
