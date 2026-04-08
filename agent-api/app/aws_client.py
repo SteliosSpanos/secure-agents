@@ -1,6 +1,6 @@
 import boto3
 import logging
-import datetime
+from datetime import datetime, timezone
 from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
 from typing import Optional, Dict
@@ -105,7 +105,7 @@ def init_job_record(client_id: str, job_id: str, s3_path: str):
                 "client_id": {"S": client_id},
                 "status": {"S": "PENDING_UPLOAD"},
                 "s3_path": {"S": s3_path},
-                "created_at": {"S": datetime.utcnow().isoformat()}
+                "created_at": {"S": datetime.now(timezone.utc).isoformat()}
             }
         )
         return True

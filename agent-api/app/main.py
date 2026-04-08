@@ -1,8 +1,7 @@
 import uuid 
 import logging
-import os
 import hashlib
-from fastapi import FastAPI, UploadFile, File, HTTPException, status, Depends, Security
+from fastapi import FastAPI, UploadFile, File, HTTPException, status, Depends, Security, Body
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -55,7 +54,7 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.allowed_origins.split(","),
     allow_credentials=True,
-    allow_methods=["GET", "POST"],
+    allow_methods=["POST"],
     allow_headers=["*"]
 )
 
@@ -67,41 +66,32 @@ def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/api/v1/process-pdf", status_code=status.HTTP_202_ACCEPTED)
-def process_pdf(
-    file: UploadFile = File(...),
+@app.post("/api/v1/request-upload", status_code=status.HTTP_202_ACCEPTED)
+def request_upload(
+    filename: str = Body(..., embed=True),
     client_id: str = Depends(verify_api_key)
 ):
-    if file.content_type != "application/pdf":
-        raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Only PDFs accepted")
-
-    header_bytes = file.file.read(4) # Magic number verification
-    file.file.seek(0)
-
-    if header_bytes != b"%PDF":
-        logger.warning(f"Malicious file attempt from {client_id}. Magic bytes: {header_bytes}")
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PDF structure detected")
-
-    max_bytes = settings.max_file_size_mb * 1024 * 1024
-    if file.size > max_bytes:
-        raise HTTPException(status_code=status.HTTP_413_REQUEST_ENTITY_TOO_LARGE, detail="File too large")
-
+    """The client requests an upload slot, we return a pre-signed URL"""
     job_id = str(uuid.uuid4())
-    safe_name = os.path.basename(file.filename).replace(" ", "_")
-    s3_key = f"{client_id}/uploads/{job_id}/{safe_name}"
+    logger.info(f"Generating secure upload slot for client {client_id}, job {job_id}")
 
-    if not aws_client.upload_pdf_to_s3(file.file, s3_key):
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Secure storage failed")
+    upload_data = aws_client.generate_presigned_upload(client_id, job_id, filename)
 
-    message_id = aws_client.send_job_to_sqs(job_id, s3_key, client_id)
+    if not upload_data:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not secure an encrypted upload tunnel"
+        )
 
-    if not message_id:
-        aws_client.delete_pdf_object(s3_key)
-        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Job queueing failed. S3 cleanup triggered")
+    if not aws_client.init_job_record(client_id, job_id, upload_data["object_key"]):
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Pipeline registration failed"
+        )
 
     return {
         "job_id": job_id,
-        "status": "accepted",
-        "vault_path": s3_key,
-        "sqs_message_id": message_id
+        "upload_url": upload_data["url"],
+        "required_fields": upload_data["fields"],
+        "instructions": "Use a POST request with the 'required_fields' as form-data and the PDF in the 'file' field"
     }
