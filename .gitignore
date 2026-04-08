@@ -2,7 +2,7 @@
 
 *.md
 
-terraform/
+.terraform/
 *.tfstate
 *.tfstate.*
 .terraform.lock.hcl
