@@ -64,3 +64,20 @@ resource "aws_s3_bucket_policy" "terraform_state" {
   bucket = aws_s3_bucket.terraform_state.id
   policy = data.aws_iam_policy_document.state_force_ssl.json
 }
+
+// DynamoDB Table
+
+resource "aws_dynamodb_table" "terraform_locks" {
+  name         = "${var.project_name}-terraform-locks"
+  billing_mode = "PAY_PER_REQUEST"
+  hash_key     = "LockID"
+
+  attribute {
+    name = "LockID"
+    type = "S"
+  }
+
+  tags = {
+    Name = "${var.project_name}-terraform-locks"
+  }
+}
