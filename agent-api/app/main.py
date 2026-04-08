@@ -28,7 +28,7 @@ app = FastAPI(
 
 api_key_header = APIKeyHeader(name=settings.api_key_header_name, auto_error=False)
 
-async def verify_api_key(api_key: str = Security(api_key_header)) -> str:
+def verify_api_key(api_key: str = Security(api_key_header)) -> str:
     """Zero-trust, verify the client's identity before any processing"""
     if not api_key:
         raise HTTPException(
@@ -60,7 +60,7 @@ app.add_middleware(
 # Routes
 
 @app.get("/health")
-async def health_check():
+def health_check():
     return {"status": "healthy"}
 
 
