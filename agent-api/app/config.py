@@ -9,6 +9,7 @@ class Settings(BaseSettings):
 
     max_file_size_mb: int = 10
     api_key_header_name: str = "X-api-key"
+    allowed_origins: str = Field(default="http://localhost:3000")
 
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 

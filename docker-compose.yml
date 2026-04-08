@@ -1,0 +1,26 @@
+services:
+  agent-api:
+    build:
+      context: ./agent-api
+      dockerfile: Dockerfile
+    ports:
+      - "8000:8000"
+    environment:
+      - AWS_REGION=eu-central-1
+      - S3_BUCKET_NAME=${S3_BUCKET_NAME}
+      - SQS_QUEUE_URL=${SQS_QUEUE_URL}
+      - API_KEYS_TABLE_NAME=${API_KEYS_TABLE_NAME:-SecureAgents_APIKeys}
+      - ALLOWED_ORIGINS=http://localhost:3000,http://localhost:8000
+      - AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID}
+      - AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY}
+      - AWS_SESSION_TOKEN=${AWS_SESSION_TOKEN}
+    restart: always
+
+  # Optional: For future development of the Fargate Worker
+  # agent-worker:
+  #   build:
+  #     context: ./agent-worker
+  #     dockerfile: Dockerfile
+  #   environment:
+  #     - AWS_REGION=eu-central-1
+  #     ...

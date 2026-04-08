@@ -1,6 +1,7 @@
 import uuid 
 import logging
 import os
+import hashlib
 from fastapi import FastAPI, UploadFile, File, HTTPException, status, Depends, Security
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
@@ -36,7 +37,9 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
             detail="API key missing from header"
         )
     
-    client_id = aws_client.verify_api_key_in_dynamodb(api_key)
+    # Hash the incoming raw key to compare with the stored SHA-256 hash in DynamoDB
+    hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
+    client_id = aws_client.verify_api_key_in_dynamodb(hashed_key)
     
     if not client_id:
         raise HTTPException(
@@ -50,7 +53,7 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"], # SECURITY: Restrict this to your specific domain in production
+    allow_origins=settings.allowed_origins.split(","),
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["*"]
