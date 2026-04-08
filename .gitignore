@@ -1,3 +1,15 @@
 .env
 
 *.md
+
+terraform/
+*.tfstate
+*.tfstate.*
+.terraform.lock.hcl
+terraform.tfvars
+
+.ssh/
+*.pem
+*.pub
+
+__pycache__
