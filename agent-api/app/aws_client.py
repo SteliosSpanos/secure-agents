@@ -59,8 +59,8 @@ def upload_pdf_to_s3(file_obj: BinaryIO, object_name: str) -> bool:
 def delete_pdf_object(object_name: str):
     """Cleanup function to remove files if the pipeline fails"""
     try:
-        d3_client.delete_object(Bucket=settings.s3_bucket_name, Key=object_name)
-        logger.info(f"Successfully cleaned up S3 object {object_name}: {str(e)}")
+        s3_client.delete_object(Bucket=settings.s3_bucket_name, Key=object_name)
+        logger.info(f"Successfully cleaned up S3 object {object_name}")
     except Exception as e:
         logger.error(f"Failed to cleanup S3 object {object_name}: {str(e)}")
 
