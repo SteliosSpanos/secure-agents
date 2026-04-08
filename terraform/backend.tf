@@ -1,5 +1,5 @@
 /*
-    Configuration of remote backend for terraform state (S3 bucket nand DynamoDB table)
+    Configuration of remote backend for terraform state (S3 bucket nand DynamoDB table).
 */
 
 // S3 Bucket
