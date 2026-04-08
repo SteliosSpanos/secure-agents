@@ -67,7 +67,7 @@ async def health_check():
 @app.post("/api/v1/process-pdf", status_code=status.HTTP_202_ACCEPTED)
 def process_pdf(
     file: UploadFile = File(...),
-    tenant_id: str = Depends(verify_api_key)
+    client_id: str = Depends(verify_api_key)
 ):
     if file.content_type != "application/pdf":
         raise HTTPException(status_code=status.HTTP_415_UNSUPPORTED_MEDIA_TYPE, detail="Only PDFs accepted")
@@ -76,7 +76,7 @@ def process_pdf(
     file.file.seek(0)
 
     if header_bytes != b"%PDF":
-        logger.warning(f"Malicious file attempt from {tenant_id}. Magic bytes: {header_bytes}")
+        logger.warning(f"Malicious file attempt from {client_id}. Magic bytes: {header_bytes}")
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid PDF structure detected")
 
     max_bytes = settings.max_file_size_mb * 1024 * 1024
@@ -85,12 +85,12 @@ def process_pdf(
 
     job_id = str(uuid.uuid4())
     safe_name = os.path.basename(file.filename).replace(" ", "_")
-    s3_key = f"{tenant_id}/uploads/{job_id}/{safe_name}"
+    s3_key = f"{client_id}/uploads/{job_id}/{safe_name}"
 
     if not aws_client.upload_pdf_to_s3(file.file, s3_key):
         raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Secure storage failed")
 
-    message_id = aws_client.send_job_to_sqs(job_id, s3_key, tenant_id)
+    message_id = aws_client.send_job_to_sqs(job_id, s3_key, client_id)
 
     if not message_id:
         aws_client.delete_pdf_object(s3_key)
