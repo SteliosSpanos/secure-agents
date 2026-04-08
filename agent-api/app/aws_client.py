@@ -29,11 +29,37 @@ try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
     sqs_client = session.client("sqs", config=aws_config)
+    dynamodb_client = session.client("dynamodb", config=aws_config)
 except Exception as e:
     logger.critical(f"Failed to initialize AWS Session: {str(e)}.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
 
 # Service functions
+
+def verify_api_key_in_dynamodb(api_key: str) -> Optional[str]:
+    """Look up the client ID associated with an API key in DynamoDB"""
+    try:
+        response = dynamodb_client.get_item(
+            TableName=settings.api_keys_table_name,
+            Key={"api_key": {"S": api_key}},
+            ProjectionExpression="client_id, active"
+        )
+        
+        item = response.get("Item")
+        if not item:
+            logger.warning(f"Unauthorized access attempt with invalid API key.")
+            return None
+        
+        if not item.get("active", {}).get("BOOL", True):
+            logger.warning(f"Access denied: Inactive API key used.")
+            return None
+            
+        return item.get("client_id", {}).get("S")
+        
+    except (ClientError, BotoCoreError) as e:
+        logger.error(f"DynamoDB lookup failed: {str(e)}")
+        return None
+
 
 def upload_pdf_to_s3(file_obj: BinaryIO, object_name: str) -> bool:
     """Uploads a file to S3 with mandatory AES256 encryption at rest"""
