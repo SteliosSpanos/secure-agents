@@ -10,5 +10,6 @@ variable "region" {
 
 variable "project_name" {
   type        = string
+  default     = "agents"
   description = "Project name for resource naming"
 }
