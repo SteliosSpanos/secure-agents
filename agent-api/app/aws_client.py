@@ -1,9 +1,9 @@
 import boto3
-import json
 import logging
+import datetime
 from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
-from typing import BinaryIO, Optional
+from typing import Optional, Dict
 from .config import settings
 
 # Setting up logging for module
@@ -31,7 +31,7 @@ try:
     sqs_client = session.client("sqs", config=aws_config)
     dynamodb_client = session.client("dynamodb", config=aws_config)
 except Exception as e:
-    logger.critical(f"Failed to initialize AWS Session: {str(e)}.")
+    logger.exception(f"Failed to initialize AWS Session.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
 
 # Service functions
@@ -57,59 +57,58 @@ def verify_api_key_in_dynamodb(api_key: str) -> Optional[str]:
         return item.get("client_id", {}).get("S")
         
     except (ClientError, BotoCoreError) as e:
-        logger.error(f"DynamoDB lookup failed: {str(e)}")
+        logger.exception(f"DynamoDB lookup failed: {str(e)}")
         return None
 
 
-def upload_pdf_to_s3(file_obj: BinaryIO, object_name: str) -> bool:
-    """Uploads a file to S3 with mandatory AES256 encryption at rest"""
-    try:
-        logger.info(f"Attempting to upload '{object_name}' to S3 bucket '{settings.s3_bucket_name}'.")
+def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Optional[Dict]:
+    """Generates a secure S3 presigned URL (acts as a ticket)"""
+    safe_name = filename.replace(" ", "_")
+    object_key = f"{client_id}/uploads/{job_id}/{safe_name}"
 
-        s3_client.upload_fileobj(
-            file_obj,
-            settings.s3_bucket_name,
-            object_name,
-            ExtraArgs={
-                "ContentType": "application/pdf",
-                "ServerSideEncryption": "AES256"
+    try:
+        response = s3_client.generate_presigned_post(
+            Bucket=settings.s3_bucket_name,
+            Key=object_key,
+            Fields={
+                "x-amz-server-side-encryption": "AES256",
+                "x-amz-meta-client-id": client_id,
+                "x-amz-meta-job-id": job_id
+            },
+            Conditions=[
+                ["content-length-range", 1, settings.max_file_size_mb * 1024 * 1024],
+                {"x-amz-server-side-encryption": "AES256"},
+                {"x-amz-meta-client-id": client_id},
+                {"x-amz-meta-job-id": job_id}
+            ],
+            ExpiresIn=300
+        )
+
+        return {
+            "url": response["url"],
+            "fields": response["fields"],
+            "object_key": object_key
+        }
+    except (ClientError, BotoCoreError) as e:
+        logger.exception(f"Failed to sign S3 request: {str(e)}")
+        return None
+
+
+
+def init_job_record(client_id: str, job_id: str, s3_path: str):
+    """Logs the job as PENDING to ensure auditability before upload starts"""
+    try:
+        dynamodb_client.put_item(
+            TableName=settings.jobs_table_name,
+            Item={
+                "job_id": {"S": job_id},
+                "client_id": {"S": client_id},
+                "status": {"S": "PENDING_UPLOAD"},
+                "s3_path": {"S": s3_path},
+                "created_at": {"S": datetime.utcnow().isoformat()}
             }
         )
         return True
     except (ClientError, BotoCoreError) as e:
-        logger.error(f"S3 Upload failed for {object_name}: {str(e)}")
+        logger.exception(f"Job logging failed: {str(e)}")
         return False
-
-
-
-def delete_pdf_object(object_name: str):
-    """Cleanup function to remove files if the pipeline fails"""
-    try:
-        s3_client.delete_object(Bucket=settings.s3_bucket_name, Key=object_name)
-        logger.info(f"Successfully cleaned up S3 object {object_name}")
-    except Exception as e:
-        logger.error(f"Failed to cleanup S3 object {object_name}: {str(e)}")
-
-
-
-def send_job_to_sqs(job_id: str, s3_key: str, client_id: str) -> Optional[str]:
-    """Queues a job with a structured JSON payload"""
-    payload = {
-        "job_id": job_id, 
-        "s3_bucket": settings.s3_bucket_name,
-        "s3_key": s3_key,
-        "client_id": client_id,
-        "action": "summarize_and_extract"
-    }
-
-    try:
-        response = sqs_client.send_message(
-            QueueUrl=settings.sqs_queue_url,
-            MessageBody=json.dumps(payload)
-        )
-
-        return response.get("MessageId")
-    except (ClientError, BotoCoreError) as e:
-        logger.error(f"SQS queueing failed for {job_id}: {str(e)}")
-        return None
-        
