@@ -32,7 +32,7 @@ def verify_api_key(api_key: str = Security(api_key_header)) -> str:
     """Zero-trust, verify the client's identity before any processing"""
     if not api_key:
         raise HTTPException(
-            status_code=status.HTTP_403_FORBIDDEN, 
+            status_code=status.HTTP_401_UNAUTHORIZED, 
             detail="API key missing from header"
         )
     
