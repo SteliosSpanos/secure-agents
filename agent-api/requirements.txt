@@ -5,7 +5,6 @@ python-multipart==0.0.22
 
 # AWS Integration
 boto3
-mangum=0.21.0
 
 # Environment Variables
 pydantic==2.12.0
