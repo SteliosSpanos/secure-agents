@@ -55,7 +55,7 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
     effect = "Deny"
     principals {
       type        = "AWS"
-      identifiers = [aws_iam_role.fargate_task_role.arn]
+      identifiers = [aws_iam_role.agent_task_role.arn]
     }
     actions = [
       "s3:GetObject",
@@ -356,7 +356,7 @@ data "aws_iam_policy_document" "agent_iam_policy" {
       "sqs:DeleteMessage",
       "sqs:GetQueueAttributes"
     ]
-    resources = ["aws_sqs_queue.agent_queue.arn"]
+    resources = [aws_sqs_queue.agent_queue.arn]
   }
 
   statement {
