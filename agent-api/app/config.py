@@ -6,8 +6,8 @@ class Settings(BaseSettings):
     s3_bucket_name: str = Field(...)
     sqs_queue_url: str = Field(...)
 
-    jobs_table_name: str = Field(default="SecureAgents_Jobs")
-    api_keys_table_name: str = Field(default="SecureAgents_APIKeys")
+    jobs_table_name: str = Field(default="agents_Jobs")
+    api_keys_table_name: str = Field(default="agents_APIKeys")
 
     max_file_size_mb: int = 50
     api_key_header_name: str = "X-api-key"

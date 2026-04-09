@@ -27,75 +27,6 @@ data "aws_iam_policy_document" "state_force_ssl" {
   }
 }
 
-// KMS Resource-Based Key Policy
-
-data "aws_iam_policy_document" "kms_key_policy" {
-  statement {
-    sid    = "KeyAdministrator"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = [data.aws_caller_identity.current.arn]
-    }
-    actions = [
-      "kms:Create*",
-      "kms:Describe*",
-      "kms:Enable*",
-      "kms:List*",
-      "kms:Put*",
-      "kms:Update*",
-      "kms:Revoke*",
-      "kms:Disable*",
-      "kms:Get*",
-      "kms:Delete*",
-      "kms:TagResource",
-      "kms:UntagResource",
-      "kms:ScheduleKeyDeletion",
-      "kms:CancelKeyDeletion"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "KeyUsage"
-    effect = "Allow"
-    principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.fargate_task_role.arn]
-    }
-    actions = [
-      "kms:Encrypt",
-      "kms:Decrypt",
-      "kms:ReEncrypt*",
-      "kms:GenerateDataKey*",
-      "kms:DescribeKey"
-    ]
-    resources = ["*"]
-  }
-
-  statement {
-    sid    = "AllowCloudWatchLogs"
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["logs.${var.region}.amazonaws.com"]
-    }
-    actions = [
-      "kms:Decrypt",
-      "kms:Encrypt",
-      "kms:GenerateDataKey*",
-      "kms:DescribeKey",
-      "kms:ReEncrypt*"
-    ]
-    resources = ["*"]
-    condition { // Check if the logs belong to MY account
-      test     = "ArnLike"
-      variable = "kms:EncryptionContext:aws:logs:arn"
-      values   = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/${var.project_name}*"]
-    }
-  }
-}
-
 // S3 Bucket Policy (Main Bucket)
 
 data "aws_iam_policy_document" "s3_bucket_policy" {
@@ -165,6 +96,89 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
   }
 }
 
+
+
+
+
+
+// KMS Resource-Based Key Policy
+
+data "aws_iam_policy_document" "kms_key_policy" {
+  statement {
+    sid    = "KeyAdministrator"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_caller_identity.current.arn]
+    }
+    actions = [
+      "kms:Create*",
+      "kms:Describe*",
+      "kms:Enable*",
+      "kms:List*",
+      "kms:Put*",
+      "kms:Update*",
+      "kms:Revoke*",
+      "kms:Disable*",
+      "kms:Get*",
+      "kms:Delete*",
+      "kms:TagResource",
+      "kms:UntagResource",
+      "kms:ScheduleKeyDeletion",
+      "kms:CancelKeyDeletion"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "KeyUsage"
+    effect = "Allow"
+    principals {
+      type = "AWS"
+      identifiers = [
+        aws_iam_role.api_task_role.arn,
+        aws_iam_role.agent_task_role.arn
+      ]
+    }
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey"
+    ]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "AllowCloudWatchLogs"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.${var.region}.amazonaws.com"]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey",
+      "kms:ReEncrypt*"
+    ]
+    resources = ["*"]
+    condition { // Check if the logs belong to MY account
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/${var.project_name}*"]
+    }
+  }
+}
+
+
+
+
+
+
+
 // VPC Flow Log Assume Role Policy
 
 data "aws_iam_policy_document" "vpc_flow_log_assume_role" {
@@ -202,8 +216,164 @@ data "aws_iam_policy_document" "vpc_flow_log" {
     ]
     resources = [
       aws_cloudwatch_log_group.vpc_flow_logs.arn,
-      "${aws_cloudwatch_log_group.vpc_flow_logs}:*"
+      "${aws_cloudwatch_log_group.vpc_flow_logs.arn}:*"
     ]
   }
 }
 
+
+
+
+
+
+
+
+// DynamoDB Endpoint Policy
+
+data "aws_iam_policy_document" "dynamodb_endpoint_policy" {
+  statement {
+    sid    = "AllowAccessToSpecificTables"
+    effect = "Allow"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem"
+    ]
+    resources = [
+      aws_dynamodb_table.api_keys.arn,
+      aws_dynamodb_table.jobs.arn
+    ]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:PrincipalAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
+
+
+
+
+
+// ECS Assume Role Policy
+
+data "aws_iam_policy_document" "ecs_tasks_assume_role" {
+  statement {
+    actions = ["sts:AssumeRole"]
+    principals {
+      type        = "Service"
+      identifiers = ["ecs-tasks.amazonaws.com"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = ["arn:aws:ecs:${var.region}:${data.aws_caller_identity.current.account_id}:*"]
+    }
+  }
+}
+
+// API Task Policy
+
+data "aws_iam_policy_document" "api_iam_policy" {
+  statement {
+    sid    = "DynamoDBKeyVerification"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem"
+    ]
+    resources = [
+      aws_dynamodb_table.api_keys.arn,
+      aws_dynamodb_table.jobs.arn
+    ]
+  }
+
+  statement {
+    sid       = "SQSWorkQueue"
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.agent_queue.arn]
+  }
+
+  statement {
+    sid    = "KMSUsage"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey*"
+    ]
+    resources = [aws_kms_key.agents.arn]
+  }
+
+  statement {
+    sid       = "S3PresignedPost"
+    effect    = "Allow"
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.agents.arn}/*"]
+  }
+}
+
+// Agent Task Policy
+
+
+data "aws_iam_policy_document" "agent_iam_policy" {
+  statement {
+    sid    = "DynamoDBUpdate"
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:UpdateItem"
+    ]
+    resources = [aws_dynamodb_table.jobs.arn]
+  }
+
+  statement {
+    sid    = "S3Processing"
+    effect = "Allow"
+    actions = [
+      "s3:GetObject",
+      "s3:PutObject"
+    ]
+    resources = ["${aws_s3_bucket.agents.arn}/*"]
+  }
+
+  statement {
+    sid    = "SQSReadQueue"
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes"
+    ]
+    resources = ["aws_sqs_queue.agent_queue.arn"]
+  }
+
+  statement {
+    sid       = "BedrockAccess"
+    effect    = "Allow"
+    actions   = ["bedrock:InvokeModel"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/*"]
+  }
+
+  statement {
+    sid    = "KMSUsage"
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:GenerateDataKey*"
+    ]
+    resources = [aws_kms_key.agents.arn]
+  }
+}
