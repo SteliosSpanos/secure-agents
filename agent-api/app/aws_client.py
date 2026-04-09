@@ -1,5 +1,6 @@
 import boto3
 import logging
+import os
 from datetime import datetime, timezone
 from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
@@ -31,8 +32,8 @@ try:
     sqs_client = session.client("sqs", config=aws_config)
     dynamodb_client = session.client("dynamodb", config=aws_config)
 except Exception as e:
-    logger.exception(f"Failed to initialize AWS Session.")
-    raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
+    logger.exception("Failed to initialize AWS Session.")
+    raise RuntimeError(f"AWS Client initialization failed. Check credentials/IAM roles: {str(e)}")
 
 # Service functions
 
@@ -54,16 +55,20 @@ def verify_api_key_in_dynamodb(api_key: str) -> Optional[str]:
             logger.warning(f"Access denied: Inactive API key used.")
             return None
             
-        return item.get("client_id", {}).get("S")
-        
-    except (ClientError, BotoCoreError) as e:
-        logger.exception(f"DynamoDB lookup failed: {str(e)}")
+        return item.get("client_id", {}).get("S")    
+    except (ClientError, BotoCoreError):
+        logger.exception("DynamoDB lookup failed.")
         return None
+
 
 
 def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Optional[Dict]:
     """Generates a secure S3 presigned URL (acts as a ticket)"""
-    safe_name = filename.replace(" ", "_")
+    safe_name = os.path.basename(filename).replace(" ", "_")
+    if not safe_name.lower().endswith(".pdf"):
+        logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
+        return None
+
     object_key = f"{client_id}/uploads/{job_id}/{safe_name}"
 
     try:
@@ -71,15 +76,17 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Opt
             Bucket=settings.s3_bucket_name,
             Key=object_key,
             Fields={
-                "x-amz-server-side-encryption": "AES256",
+                "x-amz-server-side-encryption": "aws:kms",
                 "x-amz-meta-client-id": client_id,
-                "x-amz-meta-job-id": job_id
+                "x-amz-meta-job-id": job_id,
+                "Content-Type": "application/pdf"
             },
             Conditions=[
                 ["content-length-range", 1, settings.max_file_size_mb * 1024 * 1024],
-                {"x-amz-server-side-encryption": "AES256"},
+                {"x-amz-server-side-encryption": "aws:kms"},
                 {"x-amz-meta-client-id": client_id},
-                {"x-amz-meta-job-id": job_id}
+                {"x-amz-meta-job-id": job_id},
+                ["starts-with", "$Content-Type", "application/pdf"]
             ],
             ExpiresIn=300
         )
@@ -91,6 +98,37 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Opt
         }
     except (ClientError, BotoCoreError) as e:
         logger.exception(f"Failed to sign S3 request: {str(e)}")
+        return None
+
+
+
+def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
+    """Retrieves the status of a specific job, ensuring the client owns it"""
+    try:
+        response = dynamodb_client.get_item(
+            TableName=settings.jobs_table_name,
+            Key={"job_id": {"S": job_id}},
+            ProjectionExpression="client_id, #s, s3_path, created_at, result_summary",
+            ExpressionAttributeNames={"#s": "status"}
+        )
+
+        item = response.get("Item")
+        if not item:
+            return None
+
+        if item.get("client_id", {}).get("S") != client_id:
+            logger.warning(f"Unauthorized status check: Client {client_id} tried to access job {job_id}")
+            return None
+
+        return {
+            "job_id": job_id,
+            "status": item.get("status", {}).get("S"),
+            "created_at": item.get("created_at", {}).get("S"),
+            "result": item.get("result_summary", {}).get("S")
+        }
+    except (ClientError, BotoCoreError) as e:
+        logger.exception(f"Failed to fetch job status: {str(e)}")
+        return None
         return None
 
 
@@ -109,6 +147,6 @@ def init_job_record(client_id: str, job_id: str, s3_path: str):
             }
         )
         return True
-    except (ClientError, BotoCoreError) as e:
-        logger.exception(f"Job logging failed: {str(e)}")
+    except (ClientError, BotoCoreError):
+        logger.exception("Job logging failed.")
         return False

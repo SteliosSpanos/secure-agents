@@ -75,12 +75,13 @@ def request_upload(
     job_id = str(uuid.uuid4())
     logger.info(f"Generating secure upload slot for client {client_id}, job {job_id}")
 
+    # The generate_presigned_upload function now handles extension validation
     upload_data = aws_client.generate_presigned_upload(client_id, job_id, filename)
 
     if not upload_data:
         raise HTTPException(
-            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail="Could not secure an encrypted upload tunnel"
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid request. Ensure you are uploading a .pdf file and the filename is safe."
         )
 
     if not aws_client.init_job_record(client_id, job_id, upload_data["object_key"]):
@@ -95,3 +96,20 @@ def request_upload(
         "required_fields": upload_data["fields"],
         "instructions": "Use a POST request with the 'required_fields' as form-data and the PDF in the 'file' field"
     }
+
+
+@app.get("/api/v1/jobs/{job_id}")
+def get_job_status(
+    job_id: str,
+    client_id: str = Depends(verify_api_key)
+):
+    """Securely check the status of a document processing job"""
+    status_info = aws_client.get_job_status(client_id, job_id)
+    
+    if not status_info:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Job not found or access denied"
+        )
+        
+    return status_info
