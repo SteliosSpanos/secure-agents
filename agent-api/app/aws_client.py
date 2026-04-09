@@ -1,6 +1,6 @@
 import boto3
 import logging
-import os
+import re
 from datetime import datetime, timezone
 from botocore.config import Config
 from botocore.exceptions import ClientError, BotoCoreError
@@ -25,6 +25,12 @@ aws_config = Config(
     connect_timeout=5,
     read_timeout=15
 )
+
+# Custom Exceptions so FastAPI knows exactly what failed
+
+class AWSDatabaseError(Exception): pass
+class AWSStorageError(Exception): pass
+class UserInputError(Exception): pass
 
 try:
     session = boto3.Session()
@@ -58,13 +64,13 @@ def verify_api_key_in_dynamodb(api_key: str) -> Optional[str]:
         return item.get("client_id", {}).get("S")    
     except (ClientError, BotoCoreError):
         logger.exception("DynamoDB lookup failed.")
-        return None
+        raise AWSDatabaseError("Database unreachable.") from e
 
 
 
-def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Optional[Dict]:
+def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dict:
     """Generates a secure S3 presigned URL (acts as a ticket)"""
-    safe_name = os.path.basename(filename).replace(" ", "_")
+    safe_name = re.sub(r'[^a-zA-Z0-9.\-_]', '_', filename)
     if not safe_name.lower().endswith(".pdf"):
         logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
         return None
@@ -97,8 +103,8 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Opt
             "object_key": object_key
         }
     except (ClientError, BotoCoreError) as e:
-        logger.exception(f"Failed to sign S3 request: {str(e)}")
-        return None
+        logger.exception(f"Failed to sign S3 request.")
+        raise AWSStorageError("Failed to generate secure upload tunnel.") from e 
 
 
 
@@ -127,13 +133,12 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
             "result": item.get("result_summary", {}).get("S")
         }
     except (ClientError, BotoCoreError) as e:
-        logger.exception(f"Failed to fetch job status: {str(e)}")
-        return None
-        return None
+        logger.exception(f"Failed to fetch job status.")
+        raise AWSDatabaseError("Database unreachable.") from e
 
 
 
-def init_job_record(client_id: str, job_id: str, s3_path: str):
+def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
     """Logs the job as PENDING to ensure auditability before upload starts"""
     try:
         dynamodb_client.put_item(
@@ -146,7 +151,6 @@ def init_job_record(client_id: str, job_id: str, s3_path: str):
                 "created_at": {"S": datetime.now(timezone.utc).isoformat()}
             }
         )
-        return True
-    except (ClientError, BotoCoreError):
+    except (ClientError, BotoCoreError) as e:
         logger.exception("Job logging failed.")
-        return False
+        raise AWSDatabaseError("Failed to initialize job record.") from e
