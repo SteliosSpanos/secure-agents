@@ -39,7 +39,7 @@ try:
     dynamodb_client = session.client("dynamodb", config=aws_config)
 except Exception as e:
     logger.exception("Failed to initialize AWS Session.")
-    raise RuntimeError(f"AWS Client initialization failed. Check credentials/IAM roles: {str(e)}")
+    raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
 
 # Service functions
 
@@ -72,7 +72,7 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
     """Generates a secure S3 presigned URL (acts as a ticket)"""
     safe_name = re.sub(r'[^a-zA-Z0-9.\-_]', '_', filename)
     if not safe_name.lower().endswith(".pdf"):
-        logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
+        logger.warning("Client {client_id} attempted to upload non-PDF: {filename}")
         raise UserInputError("Only .pdf files are allowed.")
 
     object_key = f"{client_id}/uploads/{job_id}/{safe_name}"
@@ -123,7 +123,7 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
             return None
 
         if item.get("client_id", {}).get("S") != client_id:
-            logger.warning(f"Unauthorized status check: Client {client_id} tried to access job {job_id}")
+            logger.warning("Unauthorized status check: Client {client_id} tried to access job {job_id}")
             return None
 
         return {
@@ -133,7 +133,7 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
             "result": item.get("result_summary", {}).get("S")
         }
     except (ClientError, BotoCoreError) as e:
-        logger.exception(f"Failed to fetch job status.")
+        logger.exception("Failed to fetch job status.")
         raise AWSDatabaseError("Database unreachable.") from e
 
 
