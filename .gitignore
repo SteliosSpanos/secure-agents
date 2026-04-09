@@ -1,7 +1,5 @@
 .env
 
-*.md
-
 .terraform/
 *.tfstate
 *.tfstate.*
