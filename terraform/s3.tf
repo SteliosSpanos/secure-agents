@@ -1,13 +1,28 @@
 /*
-    The S3 bucket accessed by the API and the agent and the logging bucket inside of it.
+    The S3 bucket accessed by the API and the agent.
     The access to the bucket follows the bucket policies and has server side encryption.
 */
 
 resource "aws_s3_bucket" "agents" {
-  bucket = "${var.project_name}-storage-${data.aws_caller_identity.current.account_id}"
+  bucket        = "${var.project_name}-storage-${data.aws_caller_identity.current.account_id}"
+  force_destroy = false
 
   tags = {
     Name = "${var.project_name}-storage"
+  }
+}
+
+// CORS Configuration
+
+resource "aws_s3_bucket_cors_configuration" "agents" {
+  bucket = aws_s3_bucket.agents.id
+
+  cors_rule {
+    allowed_headers = ["*"]
+    allowed_methods = ["POST"]
+    allowed_origins = ["https://localhost:3000"]
+    expose_headers  = ["ETag"]
+    max_age_seconds = 3000
   }
 }
 
@@ -38,7 +53,7 @@ resource "aws_s3_bucket_lifecycle_configuration" "agents" {
   bucket = aws_s3_bucket.agents.id
 
   rule {
-    id     = "cleanup-old-version"
+    id     = "cleanup-old-version-and-30-day-retention"
     status = "Enabled"
 
     filter {}
@@ -49,6 +64,10 @@ resource "aws_s3_bucket_lifecycle_configuration" "agents" {
 
     abort_incomplete_multipart_upload {
       days_after_initiation = 7
+    }
+
+    expiration {
+      days = 30
     }
   }
 }
@@ -86,10 +105,10 @@ resource "aws_s3_bucket_policy" "agents" {
 // VPC Endpoint
 
 resource "aws_vpc_endpoint" "s3" {
-  vpc_id       = aws_vpc.agents_vpc.id
-  service_name = "com.amazonaws.${var.region}.s3"
-
-  route_table_ids = [aws_route_table.agents_private_rt.id]
+  vpc_id            = aws_vpc.agents_vpc.id
+  service_name      = "com.amazonaws.${var.region}.s3"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.agents_private_rt.id]
 
   tags = {
     Name = "${var.project_name}-s3-endpoint"
