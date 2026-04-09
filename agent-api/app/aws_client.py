@@ -62,7 +62,7 @@ def verify_api_key_in_dynamodb(api_key: str) -> Optional[str]:
             return None
             
         return item.get("client_id", {}).get("S")    
-    except (ClientError, BotoCoreError):
+    except (ClientError, BotoCoreError) as e:
         logger.exception("DynamoDB lookup failed.")
         raise AWSDatabaseError("Database unreachable.") from e
 
@@ -73,7 +73,7 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
     safe_name = re.sub(r'[^a-zA-Z0-9.\-_]', '_', filename)
     if not safe_name.lower().endswith(".pdf"):
         logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
-        return None
+        raise UserInputError("Only .pdf files are allowed.")
 
     object_key = f"{client_id}/uploads/{job_id}/{safe_name}"
 
@@ -103,7 +103,7 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
             "object_key": object_key
         }
     except (ClientError, BotoCoreError) as e:
-        logger.exception(f"Failed to sign S3 request.")
+        logger.exception("Failed to sign S3 request.")
         raise AWSStorageError("Failed to generate secure upload tunnel.") from e 
 
 
