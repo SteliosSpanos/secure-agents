@@ -18,11 +18,6 @@ resource "aws_apigatewayv2_vpc_link" "api_link" {
 resource "aws_apigatewayv2_api" "fastapi_gateway" {
   name          = "${var.project_name}-gateway"
   protocol_type = "HTTP"
-
-  cors_configuration {
-    allow_origins = ["*"]
-    allow_headers = ["Authorization", "Content-Type", "x-api-key"]
-  }
 }
 
 // Connection to ALB
