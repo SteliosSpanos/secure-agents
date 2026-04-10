@@ -171,6 +171,20 @@ data "aws_iam_policy_document" "kms_key_policy" {
       values   = ["arn:aws:logs:${var.region}:${data.aws_caller_identity.current.account_id}:log-group:/${var.project_name}*"]
     }
   }
+
+  statement {
+    sid    = "AllowS3ToEncryptSQSMessages"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["s3.amazonaws.com"]
+    }
+    actions = [
+      "kms:GenerateDataKey",
+      "kms:Decrypt"
+    ]
+    resources = ["*"]
+  }
 }
 
 
@@ -375,5 +389,50 @@ data "aws_iam_policy_document" "agent_iam_policy" {
       "kms:GenerateDataKey*"
     ]
     resources = [aws_kms_key.agents.arn]
+  }
+}
+
+
+
+
+
+
+// SQS Queue Policy
+
+data "aws_iam_policy_document" "sqs_queue_policy" {
+  statement {
+    sid    = "AllowS3ToSendMessage"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["s3.amazonaws.com"]
+    }
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.agent_queue.arn]
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [aws_s3_bucket.agents.arn]
+    }
+  }
+
+  statement {
+    sid    = "AllowComputeUsage"
+    effect = "Allow"
+    principals {
+      type = "AWS"
+      identifiers = [
+        aws_iam_role.agent_task_role.arn,
+        aws_iam_role.api_task_role.arn
+      ]
+    }
+    actions = [
+      "sqs:SendMessage",
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility"
+    ]
+    resources = [aws_sqs_queue.agent_queue.arn]
   }
 }
