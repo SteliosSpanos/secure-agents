@@ -8,7 +8,7 @@
 
 resource "aws_sqs_queue" "agent_dlq" {
   name                              = "${var.project_name}-dlq"
-  message_retention_seconds         = 1209600 # 14 days (max allowed)
+  message_retention_seconds         = var.sqs_dlq_retention_days * 86400 # 14 days (max allowed)
   kms_master_key_id                 = aws_kms_key.agents.arn
   kms_data_key_reuse_period_seconds = 300
 
@@ -23,7 +23,7 @@ resource "aws_sqs_queue" "agent_queue" {
   name                       = "${var.project_name}-work-queue"
   delay_seconds              = 0
   max_message_size           = 262144
-  message_retention_seconds  = 345600
+  message_retention_seconds  = var.sqs_retention_days * 86400
   receive_wait_time_seconds  = 20  // Long polling (cost saving)
   visibility_timeout_seconds = 600 // to allow AI processing
 

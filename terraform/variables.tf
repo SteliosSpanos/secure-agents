@@ -37,3 +37,15 @@ variable "private_subnet_2_cidr" {
   default     = "10.0.3.0/24"
   description = "Private subnet 2 CIDR"
 }
+
+variable "sqs_retention_days" {
+  type        = number
+  default     = 4
+  description = "How long to keep a message in the work queue"
+}
+
+variable "sqs_dlq_retention_days" {
+  type        = number
+  default     = 14
+  description = "How long to keep failed messages in the DLQ"
+}
