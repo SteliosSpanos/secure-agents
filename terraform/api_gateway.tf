@@ -25,6 +25,8 @@ resource "aws_apigatewayv2_api" "fastapi_gateway" {
   }
 }
 
+// Connection to ALB
+
 resource "aws_apigatewayv2_integration" "alb_integration" {
   api_id             = aws_apigatewayv2_api.fastapi_gateway.id
   integration_type   = "HTTP_PROXY"
@@ -32,4 +34,20 @@ resource "aws_apigatewayv2_integration" "alb_integration" {
   integration_method = "ANY"
   connection_type    = "VPC_LINK"
   connection_id      = aws_apigatewayv2_vpc_link.api_link.id
+}
+
+// The "Dumb Pipe" Route
+
+resource "aws_apigatewayv2_route" "default_route" {
+  api_id    = aws_apigatewayv2_api.fastapi_gateway.id
+  route_key = "ANY /{proxy+}"
+  target    = "integrations/${aws_apigatewayv2_integration.alb_integration.id}"
+}
+
+// Deploy the stage
+
+resource "aws_apigatewayv2_stage" "default_stage" {
+  api_id      = aws_apigatewayv2_api.fastapi_gateway.id
+  name        = "$default"
+  auto_deploy = true
 }
