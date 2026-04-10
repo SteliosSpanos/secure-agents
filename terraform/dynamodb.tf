@@ -5,7 +5,7 @@
 // API Keys Table
 
 resource "aws_dynamodb_table" "api_keys" {
-  name         = "${var.project_name}_APIKeys"
+  name         = "agents_APIKeys"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "api_key"
 
@@ -32,7 +32,7 @@ resource "aws_dynamodb_table" "api_keys" {
 // Jobs Table
 
 resource "aws_dynamodb_table" "jobs" {
-  name         = "${var.project_name}_Jobs"
+  name         = "agents_Jobs"
   billing_mode = "PAY_PER_REQUEST"
   hash_key     = "job_id"
 
