@@ -1,7 +1,7 @@
 import uuid 
 import logging
 import hashlib
-from fastapi import FastAPI, HTTPException, status, Depends, Security, Body
+from fastapi import FastAPI, HTTPException, status, Depends, Security, Body, Header
 from fastapi.security import APIKeyHeader
 from fastapi.middleware.cors import CORSMiddleware
 
@@ -25,37 +25,6 @@ app = FastAPI(
     version="1.0.1"
 )
 
-
-api_key_header = APIKeyHeader(name=settings.api_key_header_name, auto_error=False)
-
-def verify_api_key(api_key: str = Security(api_key_header)) -> str:
-    """Zero-trust, verify the client's identity before any processing"""
-    if not api_key:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="API key missing from header."
-        )
-    
-    # Hash the incoming raw key to compare with the stored SHA-256 hash in DynamoDB
-    hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
-
-    try:
-        client_id = aws_client.verify_api_key_in_dynamodb(hashed_key)
-    except aws_client.AWSDatabaseError:
-        raise HTTPException(
-            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
-            detail="Authentication service temporarily unavailable."
-        )
-    
-    if not client_id:
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED, 
-            detail="Invalid or inactive API key."
-        )
-
-    return client_id
-
-
 # Explicity define who can call your API
 
 app.add_middleware(
@@ -65,6 +34,17 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["*"]
 )
+
+
+def get_client_id(x_client_id: str = Header(None, alias="x-client-id")) -> str:
+    if not x_client_id:
+        logger.error("Request reached Fargate without Gateway context.")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail="Missin secure context from API Gateway"
+        )
+
+    return x_client_id
 
 
 # Routes
@@ -77,7 +57,7 @@ def health_check():
 @app.post("/api/v1/request-upload", status_code=status.HTTP_202_ACCEPTED)
 def request_upload(
     filename: str = Body(..., embed=True),
-    client_id: str = Depends(verify_api_key)
+    client_id: str = Depends(get_client_id)
 ):
     """The client requests an upload slot, we return a pre-signed URL"""
     job_id = str(uuid.uuid4())
@@ -109,7 +89,7 @@ def request_upload(
 @app.get("/api/v1/jobs/{job_id}")
 def get_job_status(
     job_id: str,
-    client_id: str = Depends(verify_api_key)
+    client_id: str = Depends(get_client_id)
 ):
     """Securely check the status of a document processing job"""
     try:
