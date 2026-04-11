@@ -40,3 +40,15 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
+// Lambda Permissions
+
+resource "aws_iam_role" "authorizer_role" {
+  name               = "${var.project_name}-authorizer-role"
+  assume_role_policy = data.aws_iam_policy_document.authorizer_assume_role.json
+}
+
+resource "aws_iam_role_policy" "authorizer_policy" {
+  name   = "${var.project_name}-authorizer-policy"
+  role   = aws_iam_role.authorizer_role.id
+  policy = data.aws_iam_policy_document.authorizer_iam_policy.json
+}
