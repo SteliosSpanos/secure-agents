@@ -1,6 +1,6 @@
 /*
     Network Architecture: 1 VPC, 2 private subnets(multi-AZ)
-    with 1 private route table and VPC Flow Logs
+    with 1 private route table, VPC Flow Logs and VPC Endpoints
 */
 
 // VPC 
@@ -79,5 +79,39 @@ resource "aws_flow_log" "agents_vpc_flow_log" {
 
   tags = {
     Name = "${var.project_name}-vpc-flow-log"
+  }
+}
+
+// These endpoints cover the 'hidden' dependencies required for Fargate
+// 1. ECR, 2. Logs, 3. KMS, 4. SQS, 5. Bedrock
+
+locals {
+  services = [
+    "ecr.api",
+    "ecr.dkr",
+    "logs",
+    "sqs",
+    "kms",
+    "bedrock-runtime"
+  ]
+}
+
+resource "aws_vpc_endpoint" "interfaces" {
+  for_each = toset(local.services)
+
+  vpc_id            = aws_vpc.agents_vpc.id
+  service_name      = "com.amazonaws.${var.region}.${each.value}"
+  vpc_endpoint_type = "Interface"
+
+  subnet_ids = [
+    aws_subnet.agents_private_subnet_1.id,
+    aws_subnet.agents_private_subnet_2.id
+  ]
+
+  security_group_ids  = [aws_security_group.vpc_endpoints_sg.id]
+  private_dns_enabled = true
+
+  tags = {
+    Name = "${var.project_name}-${each.value}-endpoint"
   }
 }

@@ -74,3 +74,26 @@ resource "aws_security_group" "fargate_api_sg" {
     cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
   }
 }
+
+// VPC Endpoints
+
+resource "aws_security_group" "vpc_endpoints_sg" {
+  name        = "${var.project_name}-endpoints-sg"
+  description = "Allows ECS tasks to communicate with AWS Service Endpoints"
+  vpc_id      = aws_vpc.agents_vpc.id
+
+  ingress {
+    description = "HTTPS from Fargate API and Agent"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    security_groups = [
+      aws_security_group.fargate_api_sg.id,
+      aws_security_group.fargate_worker_sg.id
+    ]
+  }
+
+  tags = {
+    Name = "${var.project_name}-endpoints-sg"
+  }
+}
