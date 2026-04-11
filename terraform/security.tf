@@ -49,3 +49,28 @@ resource "aws_security_group" "alb_sg" {
     cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
   }
 }
+
+// Fargate API 
+
+resource "aws_security_group" "fargate_api_sg" {
+  name        = "${var.project_name}-fargate-api-sg"
+  description = "Security group for the FastAPI Fargate containers"
+  vpc_id      = aws_vpc.agents_vpc.id
+
+  ingress {
+    description     = "Allow HTTP from Internal ALB"
+    from_port       = 8000
+    to_port         = 8000
+    protocol        = "tcp"
+    security_groups = [aws_security_group.alb_sg.id]
+  }
+
+  egress {
+    // AWS SDK communicate ove HTTPS
+    description = "Allow HTTPS out to VPC endpoints"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+  }
+}
