@@ -79,14 +79,16 @@ jobs:
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           SHA: ${{ github.sha }}
+          API_REPO: ${{ vars.API_REPO_NAME || 'agents-api' }}
+          WORKER_REPO: ${{ vars.WORKER_REPO_NAME || 'agents-worker' }}
         run: |
           # API Image
-          docker build -t $REGISTRY/${{ vars.API_REPO }}:$SHA -t $REGISTRY/${{ vars.API_REPO }}:latest ./agent-api
+          docker build -t $REGISTRY/$API_REPO:$SHA -t $REGISTRY/$API_REPO:latest ./agent-api
           # Worker Image
-          docker build -t $REGISTRY/${{ vars.WORKER_REPO }}:$SHA -t $REGISTRY/${{ vars.WORKER_REPO }}:latest ./agent-worker
+          docker build -t $REGISTRY/$WORKER_REPO:$SHA -t $REGISTRY/$WORKER_REPO:latest ./agent-worker
 
-          docker push --all-tags $REGISTRY/${{ vars.API_REPO }}
-          docker push --all-tags $REGISTRY/${{ vars.WORKER_REPO }}
+          docker push --all-tags $REGISTRY/$API_REPO
+          docker push --all-tags $REGISTRY/$WORKER_REPO
 
       - name: Deploy Infrastructure & Refresh ECS
         run: |
