@@ -31,7 +31,7 @@ resource "aws_apigatewayv2_integration" "alb_integration" {
   connection_id      = aws_apigatewayv2_vpc_link.api_link.id
 
   request_parameters = {
-    "append:header.x-client-id" = "$context.authorizer.client_id"
+    "overwrite:header.x-client-id" = "$context.authorizer.client_id"
   }
 }
 
