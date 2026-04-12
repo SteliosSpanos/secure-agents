@@ -1,0 +1,73 @@
+name: SecureAgents CI/CD
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  quality-checks:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: "pip" # Speeds up future runs
+
+      - name: Quality Checks
+        run: |
+          pip install ruff mypy -r agent-api/requirements.txt -r agent-worker/requirements.txt
+          ruff check .
+          mypy . --ignore-missing-imports
+
+      - name: Terraform Check
+        run: |
+          cd terraform
+          terraform init -backend=false
+          terraform fmt -check
+          terraform validate
+
+  build-and-deploy:
+    needs: quality-checks
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS Credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Login to ECR
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build & Push
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          SHA: ${{ github.sha }}
+        run: |
+          # Build with SHA for versioning AND latest for convenience
+          docker build -t $REGISTRY/${{ vars.API_REPO }}:$SHA -t $REGISTRY/${{ vars.API_REPO }}:latest ./agent-api
+          docker build -t $REGISTRY/${{ vars.WORKER_REPO }}:$SHA -t $REGISTRY/${{ vars.WORKER_REPO }}:latest ./agent-worker
+          docker push --all-tags $REGISTRY/${{ vars.API_REPO }}
+          docker push --all-tags $REGISTRY/${{ vars.WORKER_REPO }}
+
+      - name: Deploy Infrastructure & Refresh ECS
+        run: |
+          cd terraform
+          terraform init
+          terraform apply -auto-approve
+
+          # Force ECS to pull the new images immediately
+          aws ecs update-service --cluster secure-agents-cluster --service secure-agents-api-service --force-new-deployment
+          aws ecs update-service --cluster secure-agents-cluster --service secure-agents-worker-service --force-new-deployment
