@@ -126,7 +126,7 @@ def process_document(bucket: str, key: str) -> str:
     return summary.strip()
 
 
-def update_job(job_id: str, status_val: str, result_summary: str = None):
+def update_job(job_id: str, status_val: str, result_summary: str | None = None):
     """Updates the DynamoDB table with status and optional summary."""
     if result_summary:
         jobs_table.update_item(
