@@ -29,7 +29,7 @@ resource "aws_appautoscaling_policy" "sqs_target_tracking" {
         metric_stat {
           metric {
             namespace   = "AWS/SQS"
-            metric_name = "ApproximateNumberOfMessagesVisible"
+            metric_name = "ApproximateNumberOfMessagesVisible" # The standard way SQS metric for how many messages are waiting
             dimensions {
               name  = "QueueName"
               value = aws_sqs_queue.agent_queue.name
