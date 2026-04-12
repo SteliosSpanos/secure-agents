@@ -6,6 +6,10 @@ on:
   pull_request:
     branches: [main]
 
+# --- THE FIX FOR THE WARNING ---
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+
 permissions:
   id-token: write
   contents: read
@@ -15,15 +19,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+
       - name: Set up Python
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
-          cache: "pip" # Speeds up future runs
+          cache: "pip"
 
-      - name: Quality Checks
+      - name: Install Linting Tools
         run: |
-          pip install ruff mypy -r agent-api/requirements.txt -r agent-worker/requirements.txt
+          python -m pip install --upgrade pip
+          pip install ruff mypy
+          # Install dependencies so mypy can check types against them
+          pip install -r agent-api/requirements.txt
+          pip install -r agent-worker/requirements.txt
+
+      - name: Python Quality Checks
+        run: |
+          # Use 'check' to find errors. Use 'format --check' if you want to enforce style.
           ruff check .
           mypy . --ignore-missing-imports
 
@@ -56,9 +69,11 @@ jobs:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           SHA: ${{ github.sha }}
         run: |
-          # Build with SHA for versioning AND latest for convenience
+          # API Image
           docker build -t $REGISTRY/${{ vars.API_REPO }}:$SHA -t $REGISTRY/${{ vars.API_REPO }}:latest ./agent-api
+          # Worker Image
           docker build -t $REGISTRY/${{ vars.WORKER_REPO }}:$SHA -t $REGISTRY/${{ vars.WORKER_REPO }}:latest ./agent-worker
+
           docker push --all-tags $REGISTRY/${{ vars.API_REPO }}
           docker push --all-tags $REGISTRY/${{ vars.WORKER_REPO }}
 
@@ -68,6 +83,7 @@ jobs:
           terraform init
           terraform apply -auto-approve
 
-          # Force ECS to pull the new images immediately
+          # Using the --force-new-deployment flag ensures Fargate pulls the 'latest' tag
+          # we just pushed, even if the task definition didn't technically change.
           aws ecs update-service --cluster secure-agents-cluster --service secure-agents-api-service --force-new-deployment
           aws ecs update-service --cluster secure-agents-cluster --service secure-agents-worker-service --force-new-deployment
