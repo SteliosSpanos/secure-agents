@@ -1,3 +1,7 @@
+/*
+  KMS Encryption Key used in services
+*/
+
 resource "aws_kms_key" "agents" {
   description             = "${var.project_name}-encryption-key"
   deletion_window_in_days = 7
