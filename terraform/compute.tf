@@ -46,7 +46,7 @@ resource "aws_ecs_task_definition" "api_task" {
   container_definitions = jsonencode([
     {
       name      = "fastapi-container"
-      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project_name}-api:latest"
+      image     = "${aws_ecr_repository.api.repository_url}:latest"
       essential = true
 
       portMappings = [
@@ -90,7 +90,7 @@ resource "aws_ecs_task_definition" "worker_task" {
   container_definitions = jsonencode([
     {
       name      = "agent-worker"
-      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project_name}-worker:latest"
+      image     = "${aws_ecr_repository.worker.repository_url}:latest"
       essential = true
       environment = [
         { name = "AWS_REGION", value = var.region },
