@@ -3,6 +3,7 @@ terraform {
 
   backend "s3" {
     bucket         = "agents-terraform-state-487322974754"
+    profile        = "dev"
     key            = "terraform.tfstate"
     region         = "eu-central-1"
     dynamodb_table = "agents-terraform-locks"
