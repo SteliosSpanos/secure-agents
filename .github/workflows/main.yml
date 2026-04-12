@@ -38,7 +38,7 @@ jobs:
         run: |
           # Use 'check' to find errors. Use 'format --check' if you want to enforce style.
           ruff check .
-          mypy . --ignore-missing-imports
+          mypy . --ignore-missing-imports --explicit-package-bases
 
       - name: Terraform Check
         run: |
