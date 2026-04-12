@@ -18,7 +18,7 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 aws_config = Config(
-    retires={
+    retries={
         "max_attempts": 3,
         "mode": "standard"
     },
@@ -28,7 +28,7 @@ aws_config = Config(
 
 
 # Handling Database and TCP connections outside of the handler for reduced latecny from cold starts
-dynamodb = boto3.resource("dynamodb")
+dynamodb = boto3.resource("dynamodb", config=aws_config)
 table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys")
 table = dynamodb.Table(table_name)
 
