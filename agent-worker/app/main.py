@@ -4,6 +4,7 @@ import json
 import boto3
 import logging
 import signal
+from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 from pypdf import PdfReader
 
@@ -30,12 +31,14 @@ aws_config = Config(
 
 sqs = boto3.client("sqs", config=aws_config)
 s3 = boto3.client("s3", config=aws_config)
-dynamodb = boto3.resource("dynamodb", config=aws_config)
 bedrock = boto3.client("bedrock-runtime", config=aws_config)
+dynamodb = boto3.resource("dynamodb", config=aws_config)
 
 jobs_table = dynamodb.Table(settings.jobs_table_name)
 
+
 # Graceful shutdown handler
+
 shutdown_flag = False
 
 def handle_sigterm(*args):
@@ -61,7 +64,9 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
 
     text = ""
     for page in reader.pages:
-        text += page.extract_text() + "\n"
+        extracted = page.extract_text()
+        if extracted:
+            text += extracted + "\n"
 
     return text.strip()
 
@@ -74,22 +79,20 @@ def process_document(bucket: str, key: str) -> str:
     if not document_text:
         raise ValueError("PDF contained no readable text.")
 
-
     document_text = document_text[:15000]
 
     logger.info("Text extracted. Invoking Bedrock Llama 3...")
     prompt = f"Provide a 3-sentence summary of the following docuent:\n\n{document_text}"
 
-    body = json.dumps({
+    native_request = json.dumps({
         "prompt": prompt,
         "max_gen_len": 512,
-        "temperature": 0.5,
-        "top_p": 0.9
+        "temperature": 0.5    
     })
 
     response = bedrock.invoke_model(
         modelId="meta.llama3-8b-instruct-v1:0",
-        body=body
+        body=json.dumps(native_request)
     )
 
     result = json.loads(response["body"].read())
@@ -136,41 +139,54 @@ def main():
 
             for msg in messages:
                 receipt_handle = msg["ReceiptHandle"]
-                body = json.loads(msg["Body"])
+                try:
+                    body = json.loads(msg["Body"])
 
-                for record in body.get("Records", []):
-                    if "s3" not in record:
-                        continue
+                    for record in body.get("Records", []):
+                        if "s3" not in record:
+                            continue
 
-                    s3_info = record["s3"]
-                    bucket = s3_info["bucket"]["name"]
-                    key = s3_info["object"]["key"]
+                        bucket = record["s3"]["bucket"]["name"]
+                        key = ["s3"]["object"]["key"]
 
-
-                    # Extract Job ID: client_id/uploads/job_id/filename.pdf 
-                    parts = key.split('/')
-                    if len(parts) >= 3:
-                        job_id = parts[2]
-                    else:
-                        logger.warning(f"Malformed S3 key: {key}")
-                        continue
+                        # Extract Job ID: client_id/uploads/job_id/filename.pdf 
+                        parts = key.split('/')
+                        if len(parts) >= 3:
+                            job_id = parts[2]
+                        else:
+                            logger.warning(f"Malformed S3 key: {key}")
+                            continue
 
 
-                    try:
-                        update_job(job_id, "PROCESSING")
-                        summary = process_document(bucket, key)
-                        update_job(job_id, "COMPLETED", result_summary=summary)
-                        logger.info(f"Job {job_id} successfully completed.")
-                    except Exception as e:
-                        logger.exception(f"Job {job_id} failed during processing.")
-                        update_job(job_id, "FAILED", result_summary=f"Error: {str(e)}")
+                        try:
+                            update_job(job_id, "PROCESSING")
+                            summary = process_document(bucket, key)
+                            update_job(job_id, "COMPLETED", result_summary=summary)
+                            logger.info(f"Job {job_id} successfully completed.")
+                        except (ClientError, BotoCoreError):
+                            logger.exception(f"Retryable AWS error for job {job_id}.")
+                            raise
+                        except Exception as e:
+                            logger.exception(f"Fatal error for job {job_id}.")
+                            update_job(job_id, "FAILED", result_summary=str(e))
 
-                sqs.delete_message(
-                    QueueUrl=settings.sqs_queue_url,
-                    ReceiptHandle=receipt_handle
-                )
-        except Exception as e:
-            logger.exception("Worker encountered a critical polling error.")
+                    sqs.delete_message(
+                        QueueUrl=settings.sqs_queue_url,
+                        ReceiptHandle=receipt_handle
+                    )
+                except (ClientError, BotoCoreError):
+                    logger.warning("AWS error occurred. Message left in queue for retry.")
+                except Exception:
+                    logger.exception("Unexpected error processing message body.")
+                    sqs.delete_message(
+                        QueueUrl=settings.sqs_queue_url,
+                        ReceiptHandle=receipt_handle
+                    )
+        except (ClientError, BotoCoreError):
+            logger.exception("Critical SQS Polling error.")
+            time.sleep(10)
+        except Exception:
+            logger.exception("Unexpected worker crash. Restarting loop...")
             time.sleep(5)
 
     logger.info("Worker shut down successfully.")
