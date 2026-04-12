@@ -58,11 +58,9 @@ resource "aws_ecs_task_definition" "api_task" {
       ]
 
       environment = [
-        { name = "PROJECT_NAME", value = var.project_name },
+        { name = "AWS_REGION", value = var.region },
         { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name },
-        { name = "DYNAMODB_KEYS_TABLE", value = aws_dynamodb_table.api_keys.name },
-        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.agents.id },
-        { name = "SQS_QUEUE_URL", value = aws_sqs_queue.agent_queue.id }
+        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.agents.id }
       ]
 
       logConfiguration = {
@@ -95,6 +93,7 @@ resource "aws_ecs_task_definition" "worker_task" {
       image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project_name}-worker:latest"
       essential = true
       environment = [
+        { name = "AWS_REGION", value = var.region },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.agent_queue.id },
         { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name }
       ]
