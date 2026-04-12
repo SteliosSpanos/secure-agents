@@ -4,6 +4,7 @@ import json
 import boto3
 import logging
 import signal
+from urllib.parse import unquote_plus
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 from pypdf import PdfReader
@@ -25,7 +26,7 @@ aws_config = Config(
         "mode": "standard"
     },
     connect_timeout=5,
-    read_timeout=15
+    read_timeout=60 # Must be > SQS WaitTimeSeconds and accommodate Bedrock
 )
 
 
@@ -55,8 +56,10 @@ signal.signal(signal.SIGINT, handle_sigterm)
 
 def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     """Downloads PDF from S3 into memory and extracts text"""
-    logger.info(f"Downloading s3://{bucket}/{key}")
-    response = s3.get_object(Bucket=bucket, Key=key)
+    decoded_key = unquote_plus(key)
+
+    logger.info(f"Downloading s3://{bucket}/{decoded_keykey}")
+    response = s3.get_object(Bucket=bucket, Key=decoded_key)
     pdf_bytes = response["Body"].read()
 
     pdf_file = io.BytesIO(pdf_bytes)
@@ -82,22 +85,45 @@ def process_document(bucket: str, key: str) -> str:
     document_text = document_text[:15000]
 
     logger.info("Text extracted. Invoking Bedrock Llama 3...")
-    prompt = f"Provide a 3-sentence summary of the following docuent:\n\n{document_text}"
 
-    native_request = json.dumps({
-        "prompt": prompt,
-        "max_gen_len": 512,
-        "temperature": 0.5    
-    })
+    system_prompt = [
+        {
+            "text": (
+                "You are an expert legal administrative assistant. "
+                "Your task is to provide objective, high-density sumaries of legal documents. "
+                "Rules:\n"
+                "- Only provide a 3-sentence summary.\n"
+                "- Do not include personal opinions or intoductory phrases like 'Here is the summary'.\n"
+                "- If the document is not legal or professional text, state 'Invalid document type'.\n"
+                "- Maintain a professional and neutral tone."
+            )
+        }
+    ]
 
-    response = bedrock.invoke_model(
+    messages = [
+        {
+            "role": "user",
+            "content": [
+                {
+                    "text": f"Please summarize the following document content:\n\n{document_text}"
+                }
+            ]
+        }
+    ]
+
+    response = bedrock.converse(
         modelId="meta.llama3-8b-instruct-v1:0",
-        body=json.dumps(native_request)
+        system=system_prompt,
+        messages=messages,
+        inferenceConfig={
+            "maxTokens": 512,
+            "temperature": 0.3,
+            "topP": 0.9
+        }
     )
 
-    result = json.loads(response["body"].read())
-    return result.get("generation", "No summary generated.").strip()
-
+    summary = response["output"]["message"]["content"][0]["text"]
+    return summary.strip()
 
 
 def update_job(job_id: str, status_val: str, result_summary: str = None):
@@ -147,7 +173,7 @@ def main():
                             continue
 
                         bucket = record["s3"]["bucket"]["name"]
-                        key = ["s3"]["object"]["key"]
+                        key = record["s3"]["object"]["key"]
 
                         # Extract Job ID: client_id/uploads/job_id/filename.pdf 
                         parts = key.split('/')
