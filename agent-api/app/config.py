@@ -3,7 +3,10 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     aws_region: str = Field(default="eu-central-1")
-    s3_bucket_name: str = Field(...)
+    s3_bucket_name: str = Field(
+        default="", 
+        validation_alias="S3_BUCKET_NAME"
+    )
 
     jobs_table_name: str = Field(
         default="agents_Jobs",
