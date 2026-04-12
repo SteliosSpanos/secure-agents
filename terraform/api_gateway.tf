@@ -1,5 +1,5 @@
 /*
-    API Gateway with VPC link to the ALB and the Lambda authorizer
+    API Gateway with VPC link to the ALB and the Lambda
 */
 
 // VPC Link
