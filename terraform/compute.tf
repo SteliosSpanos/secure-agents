@@ -1,5 +1,5 @@
 /*
-    The setup for the ECS Fargate FastAPI app
+    The setup for the ECS Fargate FastAPI app and AI agent worker
 */
 
 // ECS Cluster & Logging
@@ -13,13 +13,25 @@ resource "aws_ecs_cluster" "agents_cluster" {
   }
 }
 
+// API Logs
+
 resource "aws_cloudwatch_log_group" "api_logs" {
   name              = "/ecs/${var.project_name}/api"
   retention_in_days = 30
   kms_key_id        = aws_kms_key.agents.arn
 }
 
-// Task Definition
+// Worker Logs
+
+resource "aws_cloudwatch_log_group" "worker_logs" {
+  name              = "ecs/${var.project_name}/worker"
+  retention_in_days = 30
+  kms_key_id        = aws_kms_key.agents.arn
+}
+
+
+
+// API Task Definition 
 
 resource "aws_ecs_task_definition" "api_task" {
   family                   = "${var.project_name}-api"
@@ -65,7 +77,42 @@ resource "aws_ecs_task_definition" "api_task" {
   ])
 }
 
-// ECS Service
+// Worker Task Definition
+
+resource "aws_ecs_task_definition" "worker_task" {
+  family                   = "${var.project_name}-worker"
+  requires_compatibilities = ["FARGATE"]
+  network_mode             = "awsvpc"
+  cpu                      = 512
+  memory                   = 1024
+
+  execution_role_arn = aws_iam_role.ecs_execution_role.arn
+  task_role_arn      = aws_iam_role.agent_task_role.arn
+
+  container_definitions = jsonencode([
+    {
+      name      = "agent-worker"
+      image     = "${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com/${var.project_name}-worker:latest"
+      essential = true
+      environment = [
+        { name = "SQS_QUEUE_URL", value = aws_sqs_queue.agent_queue.id },
+        { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name }
+      ]
+      logConfiguration = {
+        logDriver = "awslogs"
+        options = {
+          "awslogs-group"         = aws_cloudwatch_log_group.worker_logs.name
+          "awslogs-region"        = var.region
+          "awslogs-stream-prefix" = "worker"
+        }
+      }
+    }
+  ])
+}
+
+
+
+// API ECS Service
 
 resource "aws_ecs_service" "api_service" {
   name            = "${var.project_name}-api-service"
@@ -91,4 +138,28 @@ resource "aws_ecs_service" "api_service" {
   }
 
   depends_on = [aws_lb_listener.api_listener]
+}
+
+// Worker ECS Service
+
+resource "aws_ecs_service" "worker_service" {
+  name            = "${var.project_name}-worker-service"
+  cluster         = aws_ecs_cluster.agents_cluster.id
+  task_definition = aws_ecs_task_definition.worker_task.arn
+  launch_type     = "FARGATE"
+
+  desired_count = 0 # Managed by auto-scaling
+
+  network_configuration {
+    subnets = [
+      aws_subnet.agents_private_subnet_1.id,
+      aws_subnet.agents_private_subnet_2.id
+    ]
+    security_groups  = [aws_security_group.fargate_worker_sg.id]
+    assign_public_ip = false
+  }
+
+  lifecycle {
+    ignore_changes = [desired_count]
+  }
 }

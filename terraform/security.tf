@@ -75,6 +75,22 @@ resource "aws_security_group" "fargate_api_sg" {
   }
 }
 
+// Fargate Workers
+
+resource "aws_security_group" "fargate_worker_sg" {
+  name        = "${var.project_name}-fargate-worker-sg"
+  description = "Security group for the AI Agent worker"
+  vpc_id      = aws_vpc.agents_vpc.id
+
+  egress {
+    description = "Allow HTTPS out to VPC Endpoints"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+  }
+}
+
 // VPC Endpoints
 
 resource "aws_security_group" "vpc_endpoints_sg" {
