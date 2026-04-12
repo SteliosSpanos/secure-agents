@@ -31,7 +31,7 @@ aws_config = Config(
 sqs = boto3.client("sqs", config=aws_config)
 s3 = boto3.client("s3", config=aws_config)
 dynamodb = boto3.resource("dynamodb", config=aws_config)
-bedrock = boto3.resource("bedrock-runtime", config=aws_config)
+bedrock = boto3.client("bedrock-runtime", config=aws_config)
 
 jobs_table = dynamodb.Table(settings.jobs_table_name)
 
