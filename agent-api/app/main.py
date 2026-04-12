@@ -1,8 +1,6 @@
 import uuid 
 import logging
-import hashlib
-from fastapi import FastAPI, HTTPException, status, Depends, Security, Body, Header
-from fastapi.security import APIKeyHeader
+from fastapi import FastAPI, HTTPException, status, Depends, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import aws_client
