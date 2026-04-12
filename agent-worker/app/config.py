@@ -2,7 +2,10 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 class Settings(BaseSettings):
-    aws_region: str = Field(default="eu-central-1")
+    aws_region: str = Field(
+        default="eu-central-1",
+        validation_alias="AWS_REGION"
+    )
     sqs_queue_url: str = Field(
         default="",
         validation_alias="SQS_QUEUE_URL"

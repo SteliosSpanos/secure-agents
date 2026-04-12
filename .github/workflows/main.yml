@@ -39,7 +39,7 @@ jobs:
           # Use 'check' to find errors. Use 'format --check' if you want to enforce style.
           ruff check .
           mypy agent-api --ignore-missing-imports
-          mypy agent-worker --ingore-missing-imports
+          mypy agent-worker --ignore-missing-imports
 
       - name: Terraform Check
         run: |
