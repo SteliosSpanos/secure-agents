@@ -1,17 +1,26 @@
+# Lambda function that is attached to the API Gateway and handles authorization.
+# Every lambda has the (event, context) signature:
+# 1. event -> dictionary that contains data sent by the service that triggered it
+# (It's different depending on the trigger)
+# 2. context -> object that contains metadata about the physical execution
+
+
 import os
 import hashlib
 import boto3
 import logging
+import json
+from botocore.exceptions import ClientError, BotoCoreError
 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 
+# Handling Database and TCP connections outside of the handler for reduced latecny from cold starts
 dynamodb = boto3.resource("dynamodb")
 table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys")
 table = dynamodb.Table(table_name)
-
 
 
 def lambda_handler(event, context):
@@ -42,6 +51,9 @@ def lambda_handler(event, context):
 
         logger.warning(f"Invalid or inactive API key: {hashed_key[:8]}...")
         return {"isAuthorized": False}
-    except Exception as e:
-        logger.exception("Authorizer database error.")
+    except (ClientError, BotoCoreError):
+        logger.exception("AWS Infrastructure error occured during authorization.")
+        return {"isAuthorized": False}
+    except Exception:
+        logger.exception("Unexpected internal Python error.")
         return {"isAuthorized": False}
