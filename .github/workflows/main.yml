@@ -41,6 +41,11 @@ jobs:
           mypy agent-api --ignore-missing-imports
           mypy agent-worker --ignore-missing-imports
 
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
+
       - name: Terraform Check
         run: |
           cd terraform
@@ -60,6 +65,11 @@ jobs:
         with:
           role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: 1.7.0
 
       - name: Login to ECR
         id: login-ecr
