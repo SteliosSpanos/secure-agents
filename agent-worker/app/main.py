@@ -90,10 +90,10 @@ def process_document(bucket: str, key: str) -> str:
         {
             "text": (
                 "You are an expert legal administrative assistant. "
-                "Your task is to provide objective, high-density sumaries of legal documents. "
+                "Your task is to provide objective, high-density summaries of legal documents. "
                 "Rules:\n"
                 "- Only provide a 3-sentence summary.\n"
-                "- Do not include personal opinions or intoductory phrases like 'Here is the summary'.\n"
+                "- Do not include personal opinions or introductory phrases like 'Here is the summary'.\n"
                 "- If the document is not legal or professional text, state 'Invalid document type'.\n"
                 "- Maintain a professional and neutral tone."
             )
@@ -112,7 +112,7 @@ def process_document(bucket: str, key: str) -> str:
     ]
 
     response = bedrock.converse(
-        modelId="meta.llama3-8b-instruct-v1:0",
+        modelId=settings.bedrock_model_id,
         system=system_prompt,
         messages=messages,
         inferenceConfig={

@@ -4,6 +4,10 @@ from pydantic import Field
 class Settings(BaseSettings):
     aws_region: str = Field(default="eu-central-1")
     sqs_queue_url: str = Field(...)
+    bedrock_model_id: str = Field(
+        default="meta.llama3-8b-instruct-v1:0",
+        validation_alias="BEDROCK_MODEL_ID"
+    )
 
     jobs_table_name: str = Field(
         default="agents_Jobs",
