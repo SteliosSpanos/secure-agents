@@ -300,24 +300,13 @@ data "aws_iam_policy_document" "ecs_tasks_assume_role" {
 
 data "aws_iam_policy_document" "api_iam_policy" {
   statement {
-    sid    = "DynamoDBKeyVerification"
+    sid    = "JobsTableAccess"
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
-      "dynamodb:PutItem",
-      "dynamodb:UpdateItem"
+      "dynamodb:PutItem"
     ]
-    resources = [
-      aws_dynamodb_table.api_keys.arn,
-      aws_dynamodb_table.jobs.arn
-    ]
-  }
-
-  statement {
-    sid       = "SQSWorkQueue"
-    effect    = "Allow"
-    actions   = ["sqs:SendMessage"]
-    resources = [aws_sqs_queue.agent_queue.arn]
+    resources = [aws_dynamodb_table.jobs.arn]
   }
 
   statement {
@@ -356,8 +345,7 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     sid    = "S3Processing"
     effect = "Allow"
     actions = [
-      "s3:GetObject",
-      "s3:PutObject"
+      "s3:GetObject"
     ]
     resources = ["${aws_s3_bucket.agents.arn}/*"]
   }
@@ -377,7 +365,7 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     sid       = "BedrockAccess"
     effect    = "Allow"
     actions   = ["bedrock:InvokeModel"]
-    resources = ["arn:aws:bedrock:${var.region}::foundation-model/*"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/meta.llama3-8b-instruct-v1:0"]
   }
 
   statement {
