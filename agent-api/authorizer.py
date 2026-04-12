@@ -11,10 +11,20 @@ import boto3
 import logging
 import json
 from botocore.exceptions import ClientError, BotoCoreError
+from botocore.config import Config
 
 
 logger = logging.getLogger()
 logger.setLevel(logging.INFO)
+
+aws_config = Config(
+    retires={
+        "max_attempts": 3,
+        "mode": "standard"
+    },
+    connect_timeout=2,
+    read_timeout=5 # Don't hang API Gateway waiting for a slow DB
+)
 
 
 # Handling Database and TCP connections outside of the handler for reduced latecny from cold starts
