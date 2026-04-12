@@ -49,3 +49,9 @@ variable "sqs_dlq_retention_days" {
   default     = 14
   description = "How long to keep failed messages in the DLQ"
 }
+
+variable "bedrock_model_id" {
+  type        = string
+  default     = "meta.llama3-8b-instruct-v1:0"
+  description = "Bedrock foundation model ID"
+}

@@ -95,7 +95,8 @@ resource "aws_ecs_task_definition" "worker_task" {
       environment = [
         { name = "AWS_REGION", value = var.region },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.agent_queue.id },
-        { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name }
+        { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name },
+        { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id }
       ]
       logConfiguration = {
         logDriver = "awslogs"

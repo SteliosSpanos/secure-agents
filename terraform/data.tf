@@ -365,7 +365,7 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     sid       = "BedrockAccess"
     effect    = "Allow"
     actions   = ["bedrock:InvokeModel"]
-    resources = ["arn:aws:bedrock:${var.region}::foundation-model/meta.llama3-8b-instruct-v1:0"]
+    resources = ["arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"]
   }
 
   statement {
