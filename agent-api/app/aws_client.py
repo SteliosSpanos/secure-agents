@@ -39,7 +39,6 @@ class UserInputError(Exception): pass
 try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
-    sqs_client = session.client("sqs", config=aws_config)
     dynamodb_client = session.client("dynamodb", config=aws_config)
 except Exception as e:
     logger.exception("Failed to initialize AWS Session.")
