@@ -29,9 +29,12 @@ aws_config = Config(
 
 # Custom Exceptions so FastAPI knows exactly what failed
 
-class AWSDatabaseError(Exception): pass
-class AWSStorageError(Exception): pass
-class UserInputError(Exception): pass
+class AWSDatabaseError(Exception):
+    pass
+class AWSStorageError(Exception):
+    pass
+class UserInputError(Exception):
+    pass
 
 
 # Initializing a session
@@ -40,7 +43,7 @@ try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
     dynamodb_client = session.client("dynamodb", config=aws_config)
-except Exception as e:
+except Exception:
     logger.exception("Failed to initialize AWS Session.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
 
