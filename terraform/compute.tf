@@ -24,7 +24,7 @@ resource "aws_cloudwatch_log_group" "api_logs" {
 // Worker Logs
 
 resource "aws_cloudwatch_log_group" "worker_logs" {
-  name              = "ecs/${var.project_name}/worker"
+  name              = "/ecs/${var.project_name}/worker"
   retention_in_days = 30
   kms_key_id        = aws_kms_key.agents.arn
 }
