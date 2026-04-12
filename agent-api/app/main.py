@@ -39,7 +39,7 @@ def get_client_id(x_client_id: str = Header(None, alias="x-client-id")) -> str:
         logger.error("Request reached Fargate without Gateway context.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Missin secure context from API Gateway"
+            detail="Missing secure context from API Gateway"
         )
 
     return x_client_id

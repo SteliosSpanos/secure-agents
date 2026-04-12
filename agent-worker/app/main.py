@@ -58,7 +58,7 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     """Downloads PDF from S3 into memory and extracts text"""
     decoded_key = unquote_plus(key)
 
-    logger.info(f"Downloading s3://{bucket}/{decoded_keykey}")
+    logger.info(f"Downloading s3://{bucket}/{decoded_key}")
     response = s3.get_object(Bucket=bucket, Key=decoded_key)
     pdf_bytes = response["Body"].read()
 

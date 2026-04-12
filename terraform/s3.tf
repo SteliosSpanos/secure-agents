@@ -20,7 +20,7 @@ resource "aws_s3_bucket_cors_configuration" "agents" {
   cors_rule {
     allowed_headers = ["*"]
     allowed_methods = ["POST"]
-    allowed_origins = ["https://localhost:3000"]
+    allowed_origins = ["http://localhost:3000"]
     expose_headers  = ["ETag"]
     max_age_seconds = 3000
   }
