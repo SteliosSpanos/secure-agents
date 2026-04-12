@@ -26,11 +26,15 @@ aws_config = Config(
     read_timeout=15
 )
 
+
 # Custom Exceptions so FastAPI knows exactly what failed
 
 class AWSDatabaseError(Exception): pass
 class AWSStorageError(Exception): pass
 class UserInputError(Exception): pass
+
+
+# Initializing a session
 
 try:
     session = boto3.Session()
@@ -41,38 +45,14 @@ except Exception as e:
     logger.exception("Failed to initialize AWS Session.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
 
+
 # Service functions
-
-def verify_api_key_in_dynamodb(api_key: str) -> Optional[str]:
-    """Look up the client ID associated with an API key in DynamoDB"""
-    try:
-        response = dynamodb_client.get_item(
-            TableName=settings.api_keys_table_name,
-            Key={"api_key": {"S": api_key}},
-            ProjectionExpression="client_id, active"
-        )
-        
-        item = response.get("Item")
-        if not item:
-            logger.warning(f"Unauthorized access attempt with invalid API key.")
-            return None
-        
-        if not item.get("active", {}).get("BOOL", True):
-            logger.warning(f"Access denied: Inactive API key used.")
-            return None
-            
-        return item.get("client_id", {}).get("S")    
-    except (ClientError, BotoCoreError) as e:
-        logger.exception("DynamoDB lookup failed.")
-        raise AWSDatabaseError("Database unreachable.") from e
-
-
 
 def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dict:
     """Generates a secure S3 presigned URL (acts as a ticket)"""
     safe_name = re.sub(r'[^a-zA-Z0-9.\-_]', '_', filename)
     if not safe_name.lower().endswith(".pdf"):
-        logger.warning("Client {client_id} attempted to upload non-PDF: {filename}")
+        logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
         raise UserInputError("Only .pdf files are allowed.")
 
     object_key = f"{client_id}/uploads/{job_id}/{safe_name}"
@@ -123,7 +103,7 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
             return None
 
         if item.get("client_id", {}).get("S") != client_id:
-            logger.warning("Unauthorized status check: Client {client_id} tried to access job {job_id}")
+            logger.warning(f"Unauthorized status check: Client {client_id} tried to access job {job_id}")
             return None
 
         return {
