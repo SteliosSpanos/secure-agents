@@ -1,10 +1,12 @@
 variable "profile" {
   type        = string
+  default     = null
   description = "AWS CLI profile"
 }
 
 variable "region" {
   type        = string
+  default     = "eu-central-1"
   description = "AWS region"
 }
 

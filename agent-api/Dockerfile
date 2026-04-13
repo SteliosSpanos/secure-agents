@@ -1,5 +1,6 @@
 FROM python:3.11-slim as builder
 
+ENV PYTHONUSERBASE=/build/user_base
 WORKDIR /build
 
 COPY requirements.txt .
@@ -9,13 +10,14 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN groupadd -r appuser && useradd -r -g appuser appuser
-
-COPY --from=builder /root/.local /home/appuser/.local
-
-COPY --chown=appuser:appuser . .
+RUN groupadd -r appuser && useradd -m -r -g appuser appuser
 
 USER appuser
+WORKDIR /home/appuser
+
+COPY --from=builder --chown=appuser:appuser /root/.local .local
+
+COPY --chown=appuser:appuser . .
 
 ENV PATH=/home/appuser/.local/bin:$PATH
 ENV PYTHONUNBUFFERED=1
