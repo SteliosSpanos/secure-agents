@@ -112,7 +112,7 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
       type        = "*"
       identifiers = ["*"]
     }
-    actions   = ["s3:GetObject"]
+    actions = ["s3:GetObject"]
     resources = [
       "arn:aws:s3:::prod-${var.region}-starport-layer-bucket/*",
       "arn:aws:s3:::starport-layer-bucket/*"
