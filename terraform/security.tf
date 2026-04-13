@@ -67,11 +67,12 @@ resource "aws_security_group" "fargate_api_sg" {
 
   egress {
     // AWS SDK communicate ove HTTPS
-    description = "Allow HTTPS out to VPC endpoints"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+    description     = "Allow HTTPS out to VPC endpoints and S3"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    cidr_blocks     = [aws_vpc.agents_vpc.cidr_block]
+    prefix_list_ids = [data.aws_prefix_list.s3.id]
   }
 }
 
@@ -83,11 +84,12 @@ resource "aws_security_group" "fargate_worker_sg" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   egress {
-    description = "Allow HTTPS out to VPC Endpoints"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+    description     = "Allow HTTPS out to VPC Endpoints and S3"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    cidr_blocks     = [aws_vpc.agents_vpc.cidr_block]
+    prefix_list_ids = [data.aws_prefix_list.s3.id]
   }
 }
 

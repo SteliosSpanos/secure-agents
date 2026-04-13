@@ -4,6 +4,10 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+data "aws_prefix_list" "s3" {
+  prefix_list_id = aws_vpc_endpoint.s3.prefix_list_id
+}
+
 // S3 Bucket Policy (Remote Backend)
 
 data "aws_iam_policy_document" "state_force_ssl" {
@@ -93,6 +97,19 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
       variable = "aws:PrincipalAccount"
       values   = [data.aws_caller_identity.current.account_id]
     }
+  }
+
+  # This is CRITICAL for ECR to work in a private VPC with a Gateway endpoint
+  # ECR stores image layers in AWS-managed S3 buckets.
+  statement {
+    sid    = "AllowECRLayerPull"
+    effect = "Allow"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["s3:GetObject"]
+    resources = ["arn:aws:s3:::prod-${var.region}-starport-layer-bucket/*"]
   }
 }
 
@@ -332,7 +349,6 @@ data "aws_iam_policy_document" "api_iam_policy" {
 }
 
 // Agent Task Policy
-
 
 data "aws_iam_policy_document" "agent_iam_policy" {
   statement {
