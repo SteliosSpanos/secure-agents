@@ -21,6 +21,7 @@ graph TD
       Authorizer[("Lambda Authorizer")]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
+  end
 ```
 
 ### 1. API Gateway + Internal ALB (The Double Shield)
