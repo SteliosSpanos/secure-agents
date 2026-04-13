@@ -8,6 +8,10 @@ data "aws_prefix_list" "s3" {
   prefix_list_id = aws_vpc_endpoint.s3.prefix_list_id
 }
 
+data "aws_prefix_list" "dynamodb" {
+  prefix_list_id = aws_vpc_endpoint.dynamodb.prefix_list_id
+}
+
 // S3 Bucket Policy (Remote Backend)
 
 data "aws_iam_policy_document" "state_force_ssl" {
@@ -109,7 +113,10 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
       identifiers = ["*"]
     }
     actions   = ["s3:GetObject"]
-    resources = ["arn:aws:s3:::prod-${var.region}-starport-layer-bucket/*"]
+    resources = [
+      "arn:aws:s3:::prod-${var.region}-starport-layer-bucket/*",
+      "arn:aws:s3:::starport-layer-bucket/*"
+    ]
   }
 }
 

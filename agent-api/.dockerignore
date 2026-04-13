@@ -3,5 +3,11 @@ __pycache__/
 *.pyo
 *.pyd
 .env
+.env.example
 .git
 .gitignore
+Dockerfile
+.dockerignore
+client_key_script.py
+authorizer.py
+README.md

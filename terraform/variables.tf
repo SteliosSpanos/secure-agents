@@ -61,3 +61,9 @@ variable "image_tag" {
   default     = "latest"
   description = "The tag of the image to deploy"
 }
+
+variable "origins" {
+  type        = string
+  default     = "http://localhost:3000"
+  description = "Allowed origins for CORS"
+}

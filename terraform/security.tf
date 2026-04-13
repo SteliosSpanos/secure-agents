@@ -67,12 +67,15 @@ resource "aws_security_group" "fargate_api_sg" {
 
   egress {
     // AWS SDK communicate ove HTTPS
-    description     = "Allow HTTPS out to VPC endpoints and S3"
+    description     = "Allow HTTPS out to VPC endpoints, S3, and DynamoDB"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
     cidr_blocks     = [aws_vpc.agents_vpc.cidr_block]
-    prefix_list_ids = [data.aws_prefix_list.s3.id]
+    prefix_list_ids = [
+      data.aws_prefix_list.s3.id,
+      data.aws_prefix_list.dynamodb.id
+    ]
   }
 }
 
@@ -84,12 +87,15 @@ resource "aws_security_group" "fargate_worker_sg" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   egress {
-    description     = "Allow HTTPS out to VPC Endpoints and S3"
+    description     = "Allow HTTPS out to VPC Endpoints, S3, and DynamoDB"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
     cidr_blocks     = [aws_vpc.agents_vpc.cidr_block]
-    prefix_list_ids = [data.aws_prefix_list.s3.id]
+    prefix_list_ids = [
+      data.aws_prefix_list.s3.id,
+      data.aws_prefix_list.dynamodb.id
+    ]
   }
 }
 
