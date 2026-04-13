@@ -8,6 +8,13 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 
 Modern AI applications often sacrifice privacy for speed. SecureAgents was built with a "Security First, Cloud Second" mindset.
 
+```mermaid
+graph TD
+  subgraph PublicInternet["Public Internet"]
+    Client[Client Application]
+  end
+```
+
 ### 1. API Gateway + Internal ALB (The Double Shield)
 
 We use **Amazon API Gateway** as our public entry point to handle authentication via a custom Lambda Authorizer. However, the actual FastAPI application sits behind an **Internal Application Load Balancer (ALB)**.
