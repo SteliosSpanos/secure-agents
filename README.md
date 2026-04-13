@@ -21,6 +21,38 @@ graph TD
       Authorizer[("Lambda Authorizer")]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
+
+    subgraph VPC["VPC (Private Network)"]
+      VpcLinkENI[("VPC Link<br>(ENI)")]
+      InternalALB[("Internal ALB")]
+
+      subgraph VpcEndpoints["VPC Endpoints (Interface & Gateway)"]
+        EndpointSQS[("SQS")]
+        EndpointDynamoDB[("DynamoDB")]
+        EndpointS3[("S3")]
+        EndpointKMS[("KMS")]
+        EndpointSTS[("STS")]
+        EndpointECR[("ECR")]
+      end
+
+      MainQueue[("SQS:<br>agent-work-queue")]
+      DlqQueue[("SQS:<br>dlq")]
+      JobsTable[("DynamoDB:<br>agents_Jobs")]
+      StorageBucket[("S3:<br>secure-agents-storage")]
+
+      NaclGate(("NACL:<br>Private Subnet"))
+
+      subgraph PrivateSubnets["Private Subnets (Multi-AZ)"]
+        SgApi(("SG:<br>Fargate API"))
+        SgWorker(("SG:<br>Fargate Worker"))
+
+        ApiService[["ECS Fargate:<br>FastAPI App"]]
+        WorkerService[["ECS Fargate:<br>AI Agent Worker"]]
+      end
+    end
+
+    BedrockService[("Amazon Bedrock<br>(Llama 3)")]
+    KmsKey[("KMS Key:<br>(Customer Managed)")]
   end
 ```
 
