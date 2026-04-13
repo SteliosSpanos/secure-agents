@@ -93,6 +93,7 @@ locals {
     "logs",
     "sqs",
     "kms",
+    "sts",
     "bedrock-runtime"
   ]
 }
