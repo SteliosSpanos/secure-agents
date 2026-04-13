@@ -74,6 +74,17 @@ graph TD
   ApiService -- "10. Send Task Message" --> EndpointSQS
   EndpointSQS --> MainQueue
 
+  MainQueue -- "11. S3 Event Notification" --> MainQueue
+  Client -- "12. Upload PDF (Presigned)" --> StorageBucket
+  MainQueue -- "13. Dead Letter" --> DlqQueue
+  WorkerService -- "14. Long Poll Message" --> EndpointSQS
+  WorkerService -- "15. Get Job Status" --> EndpointDynamoDB
+  WorkerService -- "16. Download PDF" --> EndpointS3
+  WorkerService -- "17. Assume Task Role" --> EndpointSTS
+  WorkerService -- "18. Decrypt Data" --> EndpointKMS
+
+  WorkerService -- "19. Invoke Model" --> BedrockService
+
 ```
 
 ### 1. API Gateway + Internal ALB (The Double Shield)
