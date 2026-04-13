@@ -98,5 +98,5 @@ jobs:
 
           # Using the --force-new-deployment flag ensures Fargate pulls the 'latest' tag
           # we just pushed, even if the task definition didn't technically change.
-          aws ecs update-service --cluster secure-agents-cluster --service secure-agents-api-service --force-new-deployment
-          aws ecs update-service --cluster secure-agents-cluster --service secure-agents-worker-service --force-new-deployment
+          aws ecs update-service --cluster agents-cluster --service agents-api-service --force-new-deployment
+          aws ecs update-service --cluster agents-cluster --service agents-worker-service --force-new-deployment
