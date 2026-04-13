@@ -4,7 +4,7 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 
 ---
 
-## 🏗 The Architecture: Why We Made These Decisions
+## The Architecture: Why We Made These Decisions
 
 Modern AI applications often sacrifice privacy for speed. SecureAgents was built with a "Security First, Cloud Second" mindset.
 
