@@ -55,3 +55,9 @@ variable "bedrock_model_id" {
   default     = "meta.llama3-8b-instruct-v1:0"
   description = "Bedrock foundation model ID"
 }
+
+variable "image_tag" {
+  type        = string
+  default     = "latest"
+  description = "The tag of the image to deploy"
+}

@@ -90,7 +90,7 @@ resource "aws_ecs_task_definition" "worker_task" {
   container_definitions = jsonencode([
     {
       name      = "agent-worker"
-      image     = "${aws_ecr_repository.worker.repository_url}:latest"
+      image     = "${aws_ecr_repository.worker.repository_url}:${var.image_tag}"
       essential = true
       environment = [
         { name = "AWS_REGION", value = var.region },

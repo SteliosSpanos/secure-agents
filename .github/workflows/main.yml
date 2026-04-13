@@ -82,21 +82,21 @@ jobs:
           API_REPO: ${{ vars.API_REPO_NAME || 'agents-api' }}
           WORKER_REPO: ${{ vars.WORKER_REPO_NAME || 'agents-worker' }}
         run: |
-          # API Image
-          docker build -t $REGISTRY/$API_REPO:$SHA -t $REGISTRY/$API_REPO:latest ./agent-api
+          # API Image (Only using SHA for immutability)
+          docker build -t $REGISTRY/$API_REPO:$SHA ./agent-api
           # Worker Image
-          docker build -t $REGISTRY/$WORKER_REPO:$SHA -t $REGISTRY/$WORKER_REPO:latest ./agent-worker
+          docker build -t $REGISTRY/$WORKER_REPO:$SHA ./agent-worker
 
-          docker push --all-tags $REGISTRY/$API_REPO
-          docker push --all-tags $REGISTRY/$WORKER_REPO
+          docker push $REGISTRY/$API_REPO:$SHA
+          docker push $REGISTRY/$WORKER_REPO:$SHA
 
       - name: Deploy Infrastructure & Refresh ECS
         run: |
           cd terraform
           terraform init
-          terraform apply -auto-approve
+          terraform apply -auto-approve -var="image_tag=${{ github.sha }}"
 
-          # Using the --force-new-deployment flag ensures Fargate pulls the 'latest' tag
-          # we just pushed, even if the task definition didn't technically change.
+          # Using the --force-new-deployment flag ensures Fargate pulls the new image
+          # We update with the correct cluster and service names
           aws ecs update-service --cluster agents-cluster --service agents-api-service --force-new-deployment
           aws ecs update-service --cluster agents-cluster --service agents-worker-service --force-new-deployment
