@@ -54,6 +54,26 @@ graph TD
     BedrockService[("Amazon Bedrock<br>(Llama 3)")]
     KmsKey[("KMS Key:<br>(Customer Managed)")]
   end
+
+
+  Client -- "1. Request + x-api-key" --> APIGW
+  APIGW -- "2. Validate Key" --> Authorizer
+  Authorizer -- "3. Query Hash" --> ApiKeysTable
+  Authorizer -- "4. Return isAuthorized + context" --> APIGW
+
+  APIGW -- "5. Forward (VPC Link)" --> VpcLinkENI
+  VpcLinkENI -- "6. Forward (port 80)" --> InternalALB
+  InternalALB -- "7. Traffic (port 8000)" --> NaclGate
+  NaclGate --> SgApi
+  SgApi --> ApiService
+
+  ApiService -- "8. Init Job Record" --> EndpointDynamoDB
+  EndpointDynamoDB --> JobsTable
+  ApiService -- "9. Generate Presigned URL" --> EndpointS3
+  EndpointS3 --> StorageBucket
+  ApiService -- "10. Send Task Message" --> EndpointSQS
+  EndpointSQS --> MainQueue
+
 ```
 
 ### 1. API Gateway + Internal ALB (The Double Shield)
