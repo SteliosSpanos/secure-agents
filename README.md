@@ -11,14 +11,14 @@ Modern AI applications often sacrifice privacy for speed. SecureAgents was built
 ```mermaid
 graph TD
   subgraph PublicInternet["Public Internet"]
-    Client[Client Application]
+    Client["Client Application"]
   end
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
     APIGW[("AWS API Gateway<br>(HTTP API)")]
 
     subgraph AuthLayer["Identity & Auth"]
-      Authorizer[("Lambda Authorizer")]
+      Authorizer["Lambda Authorizer"]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
 
