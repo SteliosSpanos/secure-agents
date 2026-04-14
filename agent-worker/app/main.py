@@ -126,11 +126,11 @@ def process_document(bucket: str, key: str) -> str:
     return summary.strip()
 
 
-def update_job(job_id: str, status_val: str, result_summary: str | None = None):
+def update_job(client_id: str, job_id: str, status_val: str, result_summary: str | None = None):
     """Updates the DynamoDB table with status and optional summary."""
     if result_summary:
         jobs_table.update_item(
-            Key={"job_id": job_id},
+            Key={"client_id": client_id, "job_id": job_id},
             UpdateExpression="SET #s = :s, result_summary = :r",
             ExpressionAttributeNames={"#s": "status"},
             ExpressionAttributeValues={
@@ -140,7 +140,7 @@ def update_job(job_id: str, status_val: str, result_summary: str | None = None):
         )
     else:
         jobs_table.update_item(
-            Key={"job_id": job_id},
+            Key={"client_id": client_id, "job_id": job_id},
             UpdateExpression="SET #s = :s",
             ExpressionAttributeNames={"#s": "status"},
             ExpressionAttributeValues={":s": status_val.upper()}
@@ -175,26 +175,39 @@ def main():
                         bucket = record["s3"]["bucket"]["name"]
                         key = record["s3"]["object"]["key"]
 
-                        # Extract Job ID: client_id/uploads/job_id/filename.pdf 
+                        # Extract Client ID and Job ID: client_id/uploads/job_id/filename.pdf 
                         parts = key.split('/')
                         if len(parts) >= 3:
+                            client_id = parts[0]
                             job_id = parts[2]
                         else:
                             logger.warning(f"Malformed S3 key: {key}")
                             continue
 
 
+                        # Extreme Edge Case
                         try:
-                            update_job(job_id, "PROCESSING")
+                            response = jobs_table.get_item(Key={"client_id": client_id, "job_id": job_id})
+                            item = response.get("Item", {})
+
+                            if item.get("status") == "COMPLETED":
+                                logger.info(f"Job {job_id} already COMPLETED. Skipping duplcate processing.")
+                                continue
+                        except (ClientError, BotoCoreError):
+                            logger.warning(f"Could not verify status for {job_id}.")
+
+
+                        try:
+                            update_job(client_id, job_id, "PROCESSING")
                             summary = process_document(bucket, key)
-                            update_job(job_id, "COMPLETED", result_summary=summary)
-                            logger.info(f"Job {job_id} successfully completed.")
+                            update_job(client_id, job_id, "COMPLETED", result_summary=summary)
+                            logger.info(f"Job {job_id} successfully completed for client {client_id}.")
                         except (ClientError, BotoCoreError):
                             logger.exception(f"Retryable AWS error for job {job_id}.")
                             raise
                         except Exception as e:
                             logger.exception(f"Fatal error for job {job_id}.")
-                            update_job(job_id, "FAILED", result_summary=str(e))
+                            update_job(client_id, job_id, "FAILED", result_summary=str(e))
 
                     sqs.delete_message(
                         QueueUrl=settings.sqs_queue_url,

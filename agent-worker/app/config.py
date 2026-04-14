@@ -6,10 +6,12 @@ class Settings(BaseSettings):
         default="eu-central-1",
         validation_alias="AWS_REGION"
     )
+    
     sqs_queue_url: str = Field(
         default="",
         validation_alias="SQS_QUEUE_URL"
     )
+
     bedrock_model_id: str = Field(
         default="meta.llama3-8b-instruct-v1:0",
         validation_alias="BEDROCK_MODEL_ID"
