@@ -5,6 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from . import aws_client
 from .config import settings
+from .schemas import UploadResponse, JobStatusResponse
 
 # Setting up the logging config
 
@@ -52,7 +53,11 @@ def health_check():
     return {"status": "healthy"}
 
 
-@app.post("/api/v1/request-upload", status_code=status.HTTP_202_ACCEPTED)
+@app.post(
+    "/api/v1/request-upload",
+    status_code=status.HTTP_202_ACCEPTED,
+    response_model=UploadResponse
+)
 def request_upload(
     filename: str = Body(..., embed=True),
     client_id: str = Depends(get_client_id)
@@ -61,7 +66,6 @@ def request_upload(
     job_id = str(uuid.uuid4())
     logger.info(f"Generating secure upload slot for client {client_id}, job {job_id}")
 
-    # The generate_presigned_upload function now handles extension validation
     try:
         upload_data = aws_client.generate_presigned_upload(client_id, job_id, filename)
         aws_client.init_job_record(client_id, job_id, upload_data["object_key"])
@@ -84,7 +88,10 @@ def request_upload(
     }
 
 
-@app.get("/api/v1/jobs/{job_id}")
+@app.get(
+    "/api/v1/jobs/{job_id}",
+    response_model=JobStatusResponse
+)
 def get_job_status(
     job_id: str,
     client_id: str = Depends(get_client_id)

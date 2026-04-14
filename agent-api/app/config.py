@@ -6,6 +6,7 @@ class Settings(BaseSettings):
         default="eu-central-1",
         validation_alias="AWS_REGION"
     )
+    
     s3_bucket_name: str = Field(
         default="", 
         validation_alias="S3_BUCKET_NAME"
@@ -20,6 +21,7 @@ class Settings(BaseSettings):
         default=50,
         validation_alias="MAX_FILE_SIZE_MB"
     )
+
     allowed_origins: str = Field(
         default="http://localhost:3000",
         validation_alias="ALLOWED_ORIGINS"
