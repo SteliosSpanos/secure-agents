@@ -24,12 +24,13 @@ resource "aws_apigatewayv2_api" "fastapi_gateway" {
 
 resource "aws_apigatewayv2_integration" "alb_integration" {
   api_id             = aws_apigatewayv2_api.fastapi_gateway.id
-  integration_type   = "HTTP_PROXY"
+  integration_type   = "HTTP_PROXY" // Pass the client's request exactly as is to the backend
   integration_uri    = aws_lb_listener.api_listener.arn
   integration_method = "ANY"
   connection_type    = "VPC_LINK"
   connection_id      = aws_apigatewayv2_vpc_link.api_link.id
 
+  // It takes the client_id returned by your Lambda and injects it into the HTTP header as x-client-id
   request_parameters = {
     "overwrite:header.x-client-id" = "$context.authorizer.client_id"
   }
@@ -51,10 +52,11 @@ resource "aws_apigatewayv2_route" "default_route" {
 resource "aws_apigatewayv2_stage" "default_stage" {
   api_id      = aws_apigatewayv2_api.fastapi_gateway.id
   name        = "$default"
-  auto_deploy = true
+  auto_deploy = true // Every time you change a route, it instantly pushes the changes live
 }
 
 // Lambda Zip Automation
+
 data "archive_file" "authorizer_zip" {
   type        = "zip"
   source_file = "../agent-api/authorizer.py"
@@ -84,7 +86,7 @@ resource "aws_apigatewayv2_authorizer" "lambda_auth" {
   api_id                            = aws_apigatewayv2_api.fastapi_gateway.id
   authorizer_type                   = "REQUEST"
   authorizer_uri                    = aws_lambda_function.authorizer.invoke_arn
-  identity_sources                  = ["$request.header.x-api-key"]
+  identity_sources                  = ["$request.header.x-api-key"] // Don't start the lambda if the request doesn;t include the x-api-key header
   name                              = "lambda-authorizer"
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true

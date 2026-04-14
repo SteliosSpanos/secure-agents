@@ -41,6 +41,7 @@ resource "aws_lb_listener" "api_listener" {
   port              = "80"
   protocol          = "HTTP"
 
+  // Any traffic that hits port 80 is immediately forwarded to the target group
   default_action {
     type             = "forward"
     target_group_arn = aws_lb_target_group.api_tg.arn
