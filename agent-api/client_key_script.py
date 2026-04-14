@@ -13,5 +13,3 @@ def generate_client_key(client_name: str):
     print("=== SEND TO CLIENT ===")
     print(f"Raw API key: {raw_key}")
     
-
-generate_client_key("client_omega")
