@@ -94,14 +94,10 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
 def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
     """Retrieves the status of a specific job, ensuring the client owns it"""
     try:
-        response = jobs_table.get_item(Key={"job_id": job_id})
+        response = jobs_table.get_item(Key={"client_id": client_id, "job_id": job_id})
         item = response.get("Item")
 
         if not item:
-            return None
-
-        if item.get("client_id") != client_id:
-            logger.warning(f"Unauthorized status check: Client {client_id} tried to access job {job_id}")
             return None
 
         return {
@@ -121,8 +117,8 @@ def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
     try:
        jobs_table.put_item(
         Item={
-            "job_id": job_id,
             "client_id": client_id,
+            "job_id": job_id,
             "status": "PENDING_UPLOAD",
             "s3_path": s3_path,
             "created_at": datetime.now(timezone.utc).isoformat()
