@@ -1,5 +1,5 @@
 /*
-    DynamoDB tables compatible with the FastAPI app (SecureAgents_Jobs, SecureAgents_APIKeys)
+    DynamoDB tables compatible with the FastAPI app (agents_Jobs, agents_APIKeys)
 */
 
 // API Keys Table
@@ -34,7 +34,13 @@ resource "aws_dynamodb_table" "api_keys" {
 resource "aws_dynamodb_table" "jobs" {
   name         = "agents_Jobs"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "job_id"
+  hash_key     = "client_id"
+  range_key    = "job_id"
+
+  attribute {
+    name = "client_id"
+    type = "S"
+  }
 
   attribute {
     name = "job_id"
