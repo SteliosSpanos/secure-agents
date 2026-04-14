@@ -23,7 +23,7 @@ graph TD
     end
 
     subgraph VPC["VPC (Private Network)"]
-      VpcLinkENI[("VPC Link<br>(ENI)")]
+      VpcLinkENI["VPC Link<br>(ENI)"]
       InternalALB[("Internal ALB")]
 
       subgraph VpcEndpoints["VPC Endpoints (Interface & Gateway)"]
@@ -39,8 +39,6 @@ graph TD
       DlqQueue[("SQS:<br>dlq")]
       JobsTable[("DynamoDB:<br>agents_Jobs")]
       StorageBucket[("S3:<br>secure-agents-storage")]
-
-      NaclGate(("NACL:<br>Private Subnet"))
 
       subgraph PrivateSubnets["Private Subnets (Multi-AZ)"]
         SgApi(("SG:<br>Fargate API"))
@@ -63,8 +61,7 @@ graph TD
 
   APIGW -- "5. Forward (VPC Link)" --> VpcLinkENI
   VpcLinkENI -- "6. Forward (port 80)" --> InternalALB
-  InternalALB -- "7. Traffic (port 8000)" --> NaclGate
-  NaclGate --> SgApi
+  InternalALB -- "7. Traffic (port 8000)" --> SgApi
   SgApi --> ApiService
 
   ApiService -- "8. Init Job Record" --> EndpointDynamoDB
