@@ -42,7 +42,8 @@ class UserInputError(Exception):
 try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
-    dynamodb_client = session.client("dynamodb", config=aws_config)
+    dynamodb = session.resource("dynamodb", config=aws_config)
+    jobs_table = dynamodb.Table(settings.jobs_table_name)
 except Exception:
     logger.exception("Failed to initialize AWS Session.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
@@ -93,26 +94,21 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
 def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
     """Retrieves the status of a specific job, ensuring the client owns it"""
     try:
-        response = dynamodb_client.get_item(
-            TableName=settings.jobs_table_name,
-            Key={"job_id": {"S": job_id}},
-            ProjectionExpression="client_id, #s, s3_path, created_at, result_summary",
-            ExpressionAttributeNames={"#s": "status"}
-        )
-
+        response = jobs_table.get_item(Key={"job_id": job_id})
         item = response.get("Item")
+
         if not item:
             return None
 
-        if item.get("client_id", {}).get("S") != client_id:
+        if item.get("client_id") != client_id:
             logger.warning(f"Unauthorized status check: Client {client_id} tried to access job {job_id}")
             return None
 
         return {
             "job_id": job_id,
-            "status": item.get("status", {}).get("S"),
-            "created_at": item.get("created_at", {}).get("S"),
-            "result": item.get("result_summary", {}).get("S")
+            "status": item.get("status"),
+            "created_at": item.get("created_at"),
+            "result": item.get("result_summary")
         }
     except (ClientError, BotoCoreError) as e:
         logger.exception("Failed to fetch job status.")
@@ -123,16 +119,15 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
 def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
     """Logs the job as PENDING to ensure auditability before upload starts"""
     try:
-        dynamodb_client.put_item(
-            TableName=settings.jobs_table_name,
-            Item={
-                "job_id": {"S": job_id},
-                "client_id": {"S": client_id},
-                "status": {"S": "PENDING_UPLOAD"},
-                "s3_path": {"S": s3_path},
-                "created_at": {"S": datetime.now(timezone.utc).isoformat()}
-            }
-        )
+       jobs_table.put_item(
+        Item={
+            "job_id": job_id,
+            "client_id": client_id,
+            "status": "PENDING_UPLOAD",
+            "s3_path": s3_path,
+            "created_at": datetime.now(timezone.utc).isoformat()
+        }
+       )
     except (ClientError, BotoCoreError) as e:
         logger.exception("Job logging failed.")
         raise AWSDatabaseError("Failed to initialize job record.") from e

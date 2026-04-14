@@ -28,8 +28,8 @@ aws_config = Config(
 
 # Handling Database and TCP connections outside of the handler for reduced latecny from cold starts
 dynamodb = boto3.resource("dynamodb", config=aws_config)
-table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys")
-table = dynamodb.Table(table_name)
+table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys") # From terraform
+api_keys_table = dynamodb.Table(table_name)
 
 
 def lambda_handler(event, context):
@@ -44,7 +44,7 @@ def lambda_handler(event, context):
     hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
     try:
-        response = table.get_item(Key={"api_key": hashed_key})
+        response = api_keys_table.get_item(Key={"api_key": hashed_key})
         item = response.get("Item")
 
         if item and item.get("active", True):
