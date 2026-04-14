@@ -46,6 +46,16 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
     )
 
-    generate_client_key("TestClient")
+    client_name = "TestClient"
+    if len(sys.argv) > 1:
+        # Check for both positional and flag-style arguments
+        if sys.argv[1] == "--client-id" and len(sys.argv) > 2:
+            client_name = sys.argv[2]
+        else:
+            client_name = sys.argv[1]
+    else:
+        print("Usage: python3 client_key_script.py <client_name> (or --client-id <client_name>)")
+
+    generate_client_key(client_name)
 
     
