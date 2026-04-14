@@ -332,7 +332,8 @@ data "aws_iam_policy_document" "api_iam_policy" {
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
-      "dynamodb:PutItem"
+      "dynamodb:PutItem",
+      "dynamodb:UpdateItem"
     ]
     resources = [aws_dynamodb_table.jobs.arn]
   }
@@ -359,10 +360,11 @@ data "aws_iam_policy_document" "api_iam_policy" {
 
 data "aws_iam_policy_document" "agent_iam_policy" {
   statement {
-    sid    = "DynamoDBUpdate"
+    sid    = "DynamoDBAccess"
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
+      "dynamodb:PutItem",
       "dynamodb:UpdateItem"
     ]
     resources = [aws_dynamodb_table.jobs.arn]
