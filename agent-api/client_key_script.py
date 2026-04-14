@@ -3,16 +3,20 @@ import hashlib
 import boto3
 import logging
 import sys
+import os
 from botocore.exceptions import ClientError, BotoCoreError
 
 logger = logging.getLogger(__name__)
 
 def generate_client_key(client_name: str):
+    region = os.environ.get("AWS_REGION", "eu-central-1")
+
     raw_key = "ak_live_" + secrets.token_urlsafe(32)
     hashed_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
     try:
-        dynamodb = boto3.resource("dynamodb")
+        session = boto3.Session(region_name=region)
+        dynamodb = session.resource("dynamodb")
         api_keys_table = dynamodb.Table("agents_APIKeys")
 
         api_keys_table.put_item(
