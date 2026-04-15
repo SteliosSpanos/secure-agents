@@ -22,6 +22,15 @@ graph TD
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
 
+    subgraph RegionalServices["Regional Services (AWS Managed)"]
+      MainQueue[("SQS:<br>agent-work-queue")]
+      DlqQueue[("SQS:<br>dlq")]
+      JobsTable[("DynamoDB:<br>agents_Jobs")]
+      StorageBucket[("S3:<br>secure-agents-storage")]
+      BedrockService[("Amazon Bedrock<br>(Llama 3)")]
+      KmsKey[("KMS Key:<br>(Customer Managed)")]
+    end
+
     subgraph VPC["VPC (Private Network)"]
       VpcLinkENI["VPC Link<br>(ENI)"]
       InternalALB[("Internal ALB")]
@@ -33,12 +42,8 @@ graph TD
         EndpointKMS["KMS"]
         EndpointSTS["STS"]
         EndpointECR["ECR"]
+        EndpointBedrock["Bedrock"]
       end
-
-      MainQueue[("SQS:<br>agent-work-queue")]
-      DlqQueue[("SQS:<br>dlq")]
-      JobsTable[("DynamoDB:<br>agents_Jobs")]
-      StorageBucket[("S3:<br>secure-agents-storage")]
 
       subgraph PrivateSubnets["Private Subnets (Multi-AZ)"]
         SgApi(("SG:<br>Fargate API"))
@@ -48,9 +53,6 @@ graph TD
         WorkerService[["ECS Fargate:<br>AI Agent Worker"]]
       end
     end
-
-    BedrockService[("Amazon Bedrock<br>(Llama 3)")]
-    KmsKey[("KMS Key:<br>(Customer Managed)")]
   end
 
 
@@ -65,23 +67,25 @@ graph TD
   SgApi --> ApiService
 
   ApiService -- "8. Generate Presigned URL" --> Client
-  EndpointS3 --> StorageBucket
   ApiService -- "9. Init Job Record" --> EndpointDynamoDB
   EndpointDynamoDB --> JobsTable
   EndpointSQS --> MainQueue
+  EndpointS3 --> StorageBucket
 
   StorageBucket -- "10. S3 Event Notification" --> MainQueue
   Client -- "11. Upload PDF (Presigned)" --> StorageBucket
   MainQueue -- "12. Dead Letter" --> DlqQueue
+
   WorkerService -- "14. Long Poll Message" --> EndpointSQS
   WorkerService -- "15. Get Job Status" --> EndpointDynamoDB
   WorkerService -- "16. Download PDF" --> EndpointS3
   WorkerService -- "17. Assume Task Role" --> EndpointSTS
   WorkerService -- "18. Decrypt Data" --> EndpointKMS
+  EndpointKMS --> KmsKey
 
   SgWorker --> WorkerService
-  WorkerService -- "19. Invoke Model" --> BedrockService
-
+  WorkerService -- "19. Invoke Model" --> EndpointBedrock
+  EndpointBedrock --> BedrockService
 ```
 
 ### 1. API Gateway + Internal ALB (The Double Shield)
