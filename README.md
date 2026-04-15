@@ -11,17 +11,14 @@ Modern AI applications often sacrifice privacy for speed. SecureAgents was built
 ```mermaid
 graph TD
   %% Define Styles
-  classDef internet fill:#ffffff,stroke:#333,stroke-width:2px,color:#000;
-  classDef aws fill:#ffffff,stroke:#232f3e,stroke-width:2px,color:#000;
-  classDef vpc fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px;
-  classDef subnet fill:#e6f3ff,stroke:#0073bb,stroke-width:2px;
-  classDef regional fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px;
-  classDef endpoint fill:#fff,stroke:#d13212,stroke-width:2px;
+  classDef orange fill:#fff5e6,stroke:#ff9900,stroke-width:2px,color:#000;
+  classDef purple fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px,color:#000;
+  classDef blue fill:#e6f3ff,stroke:#0073bb,stroke-width:2px,color:#000;
 
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
   end
-  class PublicInternet internet;
+  class PublicInternet orange;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
     APIGW[("AWS API Gateway<br>(HTTP API)")]
@@ -30,6 +27,7 @@ graph TD
       Authorizer["Lambda Authorizer"]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
+    class AuthLayer purple;
 
     subgraph RegionalServices["Regional Services (AWS Managed)"]
       MainQueue[("SQS:<br>agent-work-queue")]
@@ -40,7 +38,7 @@ graph TD
       KmsKey[("KMS Key:<br>(Customer Managed)")]
       EcrRegistry[("ECR:<br>Container Images")]
     end
-    class RegionalServices regional;
+    class RegionalServices purple;
 
     subgraph VPC["VPC (Private Network)"]
       VpcLinkENI["VPC Link<br>(ENI)"]
@@ -55,7 +53,7 @@ graph TD
         EndpointECR["ECR"]
         EndpointBedrock["Bedrock"]
       end
-      class VpcEndpoints endpoint;
+      class VpcEndpoints blue;
 
       subgraph PrivateSubnets["Private Subnets (Multi-AZ)"]
         SgApi(("SG:<br>Fargate API"))
@@ -64,11 +62,11 @@ graph TD
         ApiService[["ECS Fargate:<br>FastAPI App"]]
         WorkerService[["ECS Fargate:<br>AI Agent Worker"]]
       end
-      class PrivateSubnets subnet;
+      class PrivateSubnets blue;
     end
-    class VPC vpc;
+    class VPC purple;
   end
-  class AWSCloud aws;
+  class AWSCloud orange;
 
 
   Client -- "1. Request + x-api-key" --> APIGW
