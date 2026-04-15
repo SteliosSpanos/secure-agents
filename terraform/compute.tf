@@ -129,7 +129,10 @@ resource "aws_ecs_service" "api_service" {
     container_port   = 8000
   }
 
-  depends_on = [aws_lb_listener.api_listener]
+  depends_on = [
+    aws_lb_listener.api_listener,
+    null_resource.api_bootstrap_image
+  ]
 }
 
 // Worker ECS Service
@@ -154,4 +157,6 @@ resource "aws_ecs_service" "worker_service" {
   lifecycle {
     ignore_changes = [desired_count]
   }
+
+  depends_on = [null_resource.worker_bootstrap_image]
 }

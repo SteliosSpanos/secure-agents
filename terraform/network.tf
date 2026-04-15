@@ -70,8 +70,7 @@ locals {
     "sqs",
     "kms",
     "sts",
-    "bedrock-runtime",
-    "secretsmanager"
+    "bedrock-runtime"
   ]
 }
 
