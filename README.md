@@ -113,35 +113,59 @@ graph TD
 We use **Amazon API Gateway** as our public entry point to handle authentication via a custom Lambda Authorizer. However, the actual FastAPI application sits behind an **Internal Application Load Balancer (ALB)**.
 
 - **Decision:** Split public ingress from private compute.
-- **Why?** This separation ensures our application servers have **no public IP addresses**. They live in strictly private subnets, accessible only through the API Gateway's VPC Link. This eliminates a huge class of direct-to-server attacks.
+- **Why?** This separation ensures our application servers have **no public IP addresses**. They live in strictly private subnets, accessible only through the API Gateway's VPC Link. This eliminates a huge class of direct-to-server attacks and ensures zero internet-exposed ports on our compute resources.
 
 ### 2. AWS Fargate vs. Lambda
 
 - **Decision:** Fargate for both API and Worker nodes.
 - **Why?**
-  - **Consistent Performance:** PDF processing and LLM orchestration often exceed Lambda's 15-minute timeout or memory limits.
-  - **Worker Long-Polling:** Our workers use SQS long-polling to minimize costs while maintaining a persistent connection, which is more efficient for high-volume pipelines than frequent Lambda cold starts.
-  - **Deep Monitoring:** Fargate allows us to implement kernel-level security monitoring (like eBPF) which isn't possible in the Lambda runtime.
+  - **Consistent Performance:** PDF processing and LLM orchestration often exceed Lambda's 15-minute timeout or memory limits. Fargate provides a persistent runtime with dedicated resources.
+  - **Worker Long-Polling:** Our workers use SQS long-polling (20 seconds) to minimize API call costs while maintaining a persistent connection. This is more efficient for high-volume pipelines than frequent Lambda cold starts and helps the worker scale dynamically from 0.
+  - **Deep Monitoring:** Fargate allows us to implement kernel-level security monitoring (like eBPF) and use standard container security tools, which isn't possible in the restricted Lambda environment.
 
 ### 3. Amazon Bedrock (Private Inference)
 
 - **Decision:** Serverless AI via Bedrock.
-- **Why?** Unlike public AI APIs, Bedrock ensures your data is **never used to train the base models**. By using **VPC Interface Endpoints**, the data travels from our private S3 bucket to Bedrock over the AWS private network, never crossing the public internet.
+- **Why?** Unlike public AI APIs (where data might cross the internet and be used for training), Bedrock ensures your data is **never used to train the base models**. By using **VPC Interface Endpoints**, the data travels from our private S3 bucket to Bedrock over the AWS private network, never crossing the public internet.
 
-### 4. No NAT Gateway (Zero-Egress Design)
+### 4. SQS & S3 Event-Driven Pattern (Producer-Consumer)
+
+- **Decision:** Use SQS as the glue between S3 and the Worker.
+- **Why?**
+  - **Durability:** Even if the Worker service is offline or scaling up, the work is safely buffered in SQS.
+  - **Scalability:** SQS allows us to scale the number of worker tasks based on the number of messages waiting in the queue (the "backlog per task" metric).
+  - **Reliability:** Dead Letter Queues (DLQ) ensure that failing jobs are isolated for debugging rather than blocking the entire pipeline.
+
+### 5. No NAT Gateway (Zero-Egress Design)
 
 - **Decision:** Rely entirely on VPC Endpoints.
-- **Why?** NAT Gateways are expensive ($30+/month base) and create a path for data exfiltration. Our "Zero-Egress" approach means our containers **cannot call home** or talk to anything except the specific AWS services they need to function.
+- **Why?** NAT Gateways are expensive (~$32/month base + data charges) and create a path for data exfiltration. Our "Zero-Egress" approach means our containers **cannot call home** or talk to anything except the specific AWS services they need to function. This significantly reduces the attack surface and monthly cloud spend.
 
 ---
 
-## Core Strengths (The Zero-Trust Moat)
+## Security Breakdown (The Zero-Trust Moat)
 
-- **Network Isolation:** NACLs and Security Groups strictly enforce "Private Only" traffic.
-- **Encrypted by Default:** Every byte at rest (S3/DynamoDB) and in transit (TLS 1.2+) is protected by customer-managed **KMS keys**.
-- **Asynchronous Reliability:** SQS acts as a durable buffer. Even if the AI model is slow, no document is lost.
-- **Dynamic Scaling:** The worker fleet scales from **0 to 5** automatically based on the SQS backlog, ensuring you only pay for what you use.
-- **Identity First:** Every request is authenticated at the edge by a Lambda Authorizer before it even touches the internal network.
+SecureAgents implements a defense-in-depth strategy across every layer of the stack.
+
+### Network Isolation
+
+- **Private Subnets:** No compute resources have public IP addresses.
+- **VPC Endpoints:** All AWS traffic (S3, SQS, KMS, Bedrock, DynamoDB) stays within the AWS private network.
+- **Security Groups:** Tiered rules enforce strict traffic flows (VPC Link -> ALB -> Fargate API -> Fargate Worker).
+
+### IAM (Identity and Access Management)
+
+- **Least-Privilege Roles:** Each component has its own dedicated IAM role. The API can only upload to S3; the Worker can only read from S3, poll SQS, and invoke Bedrock.
+- **No Long-Lived Credentials:** All authentication uses temporary credentials issued via IAM Task Roles.
+
+### Encryption at Rest & In Transit
+
+- **KMS Managed Keys:** A Customer Managed Key (CMK) encrypts everything: S3 buckets, DynamoDB tables, SQS queues, and CloudWatch Logs.
+- **TLS 1.2+ Everywhere:** Every request, from the client to the API Gateway and internally between AWS services, is encrypted in transit.
+
+### Zero-Trust Edge
+
+- **Lambda Authorizer:** Every incoming request is validated at the API Gateway by a custom Lambda function that checks an `x-api-key` against hashed records in DynamoDB. Traffic never enters the VPC unless it is authenticated.
 
 ---
 
@@ -175,14 +199,14 @@ SecureAgents/
 └── terraform/                  # Infrastructure as Code (AWS)
     ├── alb.tf                  # Internal Load Balancer config
     ├── api_gateway.tf          # Public API Gateway & Lambda Authorizer
-    ├── backend.tf              # S3/DynamoDB state locking (commented out)
+    ├── backend.tf              # S3/DynamoDB state locking
+    ├── cloudwatch.tf           # Log groups and retention policies
     ├── compute.tf              # ECS Cluster & Fargate Task Definitions
     ├── data.tf                 # Dynamic AWS data (AZs, Account ID, etc.)
     ├── dynamodb.tf             # Tables for Jobs and API Keys
     ├── ecr.tf                  # Container Registries for API and Worker
     ├── iam.tf                  # Fine-grained IAM Roles & Policies
     ├── kms.tf                  # Encryption Key Management (Central CMK)
-    ├── nacl.tf                 # Network Access Control Lists (Subnet Firewalls)
     ├── network.tf              # VPC, Private Subnets, and Interface Endpoints
     ├── outputs.tf              # Key deployment values (API URL, etc.)
     ├── providers.tf            # AWS Provider & Global Tagging
@@ -197,7 +221,7 @@ SecureAgents/
 
 ## Cost Efficiency (Estimated Monthly)
 
-We optimized for a "Pay-as-you-Grow" model while maintaining high security.
+We optimized for a "Pay-as-you-Grow" model while maintaining enterprise-grade security.
 
 | Service                | Estimated Cost  | Logic                                                   |
 | :--------------------- | :-------------- | :------------------------------------------------------ |
@@ -240,8 +264,6 @@ python agent-api/client_key_script.py --client-id "LawFirm_A"
 
 ---
 
-## Security Compliance
+## License
 
-- **GDPR:** Data stays within your specified AWS Region.
-- **Encryption:** AES-256 via KMS CMK.
-- **Privacy:** Bedrock inference is isolated; no data leaks to model training.
+This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
