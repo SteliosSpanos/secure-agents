@@ -10,9 +10,18 @@ Modern AI applications often sacrifice privacy for speed. SecureAgents was built
 
 ```mermaid
 graph TD
+  %% Define Styles
+  classDef public fill:#f96,stroke:#333,stroke-width:2px;
+  classDef aws fill:#ff9900,stroke:#232f3e,stroke-width:2px,color:white;
+  classDef vpc fill:#e6f3ff,stroke:#0073bb,stroke-width:2px;
+  classDef endpoint fill:#fff,stroke:#d13212,stroke-width:2px;
+  classDef regional fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px;
+  classDef compute fill:#fff,stroke:#116611,stroke-width:2px;
+
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
   end
+  class PublicInternet public;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
     APIGW[("AWS API Gateway<br>(HTTP API)")]
@@ -29,13 +38,15 @@ graph TD
       StorageBucket[("S3:<br>secure-agents-storage")]
       BedrockService[("Amazon Bedrock<br>(Llama 3)")]
       KmsKey[("KMS Key:<br>(Customer Managed)")]
+      EcrRegistry[("ECR:<br>Container Images")]
     end
+    class RegionalServices regional;
 
     subgraph VPC["VPC (Private Network)"]
       VpcLinkENI["VPC Link<br>(ENI)"]
       InternalALB[("Internal ALB")]
 
-      subgraph VpcEndpoints["VPC Endpoints (Interface & Gateway)"]
+      subgraph VpcEndpoints["VPC Endpoints"]
         EndpointSQS["SQS"]
         EndpointDynamoDB["DynamoDB"]
         EndpointS3["S3"]
@@ -44,6 +55,7 @@ graph TD
         EndpointECR["ECR"]
         EndpointBedrock["Bedrock"]
       end
+      class VpcEndpoints endpoint;
 
       subgraph PrivateSubnets["Private Subnets (Multi-AZ)"]
         SgApi(("SG:<br>Fargate API"))
@@ -52,8 +64,11 @@ graph TD
         ApiService[["ECS Fargate:<br>FastAPI App"]]
         WorkerService[["ECS Fargate:<br>AI Agent Worker"]]
       end
+      class PrivateSubnets vpc;
     end
+    class VPC vpc;
   end
+  class AWSCloud aws;
 
 
   Client -- "1. Request + x-api-key" --> APIGW
@@ -86,8 +101,12 @@ graph TD
   SgWorker --> WorkerService
   WorkerService -- "19. Invoke Model" --> EndpointBedrock
   EndpointBedrock --> BedrockService
-```
 
+  %% ECR Image Pulls
+  EcrRegistry --> EndpointECR
+  EndpointECR -. "Pull Image" .-> ApiService
+  EndpointECR -. "Pull Image" .-> WorkerService
+```
 ### 1. API Gateway + Internal ALB (The Double Shield)
 
 We use **Amazon API Gateway** as our public entry point to handle authentication via a custom Lambda Authorizer. However, the actual FastAPI application sits behind an **Internal Application Load Balancer (ALB)**.
