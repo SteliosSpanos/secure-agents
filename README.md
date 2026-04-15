@@ -11,17 +11,17 @@ Modern AI applications often sacrifice privacy for speed. SecureAgents was built
 ```mermaid
 graph TD
   %% Define Styles
-  classDef public fill:#f96,stroke:#333,stroke-width:2px;
-  classDef aws fill:#ff9900,stroke:#232f3e,stroke-width:2px,color:white;
-  classDef vpc fill:#e6f3ff,stroke:#0073bb,stroke-width:2px;
-  classDef endpoint fill:#fff,stroke:#d13212,stroke-width:2px;
+  classDef internet fill:#ffffff,stroke:#333,stroke-width:2px,color:#000;
+  classDef aws fill:#ffffff,stroke:#232f3e,stroke-width:2px,color:#000;
+  classDef vpc fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px;
+  classDef subnet fill:#e6f3ff,stroke:#0073bb,stroke-width:2px;
   classDef regional fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px;
-  classDef compute fill:#fff,stroke:#116611,stroke-width:2px;
+  classDef endpoint fill:#fff,stroke:#d13212,stroke-width:2px;
 
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
   end
-  class PublicInternet public;
+  class PublicInternet internet;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
     APIGW[("AWS API Gateway<br>(HTTP API)")]
@@ -64,7 +64,7 @@ graph TD
         ApiService[["ECS Fargate:<br>FastAPI App"]]
         WorkerService[["ECS Fargate:<br>AI Agent Worker"]]
       end
-      class PrivateSubnets vpc;
+      class PrivateSubnets subnet;
     end
     class VPC vpc;
   end
@@ -107,6 +107,7 @@ graph TD
   EndpointECR -. "Pull Image" .-> ApiService
   EndpointECR -. "Pull Image" .-> WorkerService
 ```
+
 ### 1. API Gateway + Internal ALB (The Double Shield)
 
 We use **Amazon API Gateway** as our public entry point to handle authentication via a custom Lambda Authorizer. However, the actual FastAPI application sits behind an **Internal Application Load Balancer (ALB)**.
