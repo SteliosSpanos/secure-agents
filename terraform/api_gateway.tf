@@ -53,6 +53,21 @@ resource "aws_apigatewayv2_stage" "default_stage" {
   api_id      = aws_apigatewayv2_api.fastapi_gateway.id
   name        = "$default"
   auto_deploy = true // Every time you change a route, it instantly pushes the changes live
+
+  access_log_settings {
+    destination_arn = aws_cloudwatch_log_group.api_gateway_logs.arn
+    format          = jsonencode({
+      requestId      = "$context.requestId"
+      ip             = "$context.identity.sourceIp"
+      requestTime    = "$context.requestTime"
+      httpMethod     = "$context.httpMethod"
+      routeKey       = "$context.routeKey"
+      status         = "$context.status"
+      protocol       = "$context.protocol"
+      responseLength = "$context.responseLength"
+      authorizer_id  = "$context.authorizer.client_id"
+    })
+  }
 }
 
 // Lambda Zip Automation
@@ -72,6 +87,8 @@ resource "aws_lambda_function" "authorizer" {
   role             = aws_iam_role.authorizer_role.arn
   handler          = "authorizer.lambda_handler"
   runtime          = "python3.11"
+
+  depends_on = [aws_cloudwatch_log_group.authorizer_logs]
 
   environment {
     variables = {
