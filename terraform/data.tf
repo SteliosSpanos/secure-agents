@@ -465,26 +465,30 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
       variable = "aws:SourceArn"
       values   = [aws_s3_bucket.agents.arn]
     }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
   }
 
   statement {
     sid    = "AllowComputeUsage"
     effect = "Allow"
     principals {
-      type = "AWS"
-      identifiers = [
-        aws_iam_role.agent_task_role.arn,
-        aws_iam_role.api_task_role.arn
-      ]
+      type        = "AWS"
+      identifiers = [aws_iam_role.agent_task_role.arn]
     }
     actions = [
-      "sqs:SendMessage",
       "sqs:ReceiveMessage",
       "sqs:DeleteMessage",
       "sqs:GetQueueAttributes",
       "sqs:ChangeMessageVisibility"
     ]
-    resources = [aws_sqs_queue.agent_queue.arn]
+    resources = [
+      aws_sqs_queue.agent_queue.arn,
+      aws_sqs_queue.agent_dlq.arn
+    ]
   }
 }
 

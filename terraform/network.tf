@@ -94,7 +94,8 @@ locals {
     "sqs",
     "kms",
     "sts",
-    "bedrock-runtime"
+    "bedrock-runtime",
+    "secretsmanager"
   ]
 }
 
