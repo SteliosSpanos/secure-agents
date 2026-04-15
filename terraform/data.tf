@@ -162,7 +162,8 @@ data "aws_iam_policy_document" "kms_key_policy" {
       identifiers = [
         aws_iam_role.api_task_role.arn,
         aws_iam_role.agent_task_role.arn,
-        aws_iam_role.ecs_execution_role.arn
+        aws_iam_role.ecs_execution_role.arn,
+        aws_iam_role.authorizer_role.arn
       ]
     }
     actions = [
