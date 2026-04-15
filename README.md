@@ -80,6 +80,7 @@ graph TD
   WorkerService -- "17. Assume Task Role" --> EndpointSTS
   WorkerService -- "18. Decrypt Data" --> EndpointKMS
 
+  SgWorker --> WorkerService
   WorkerService -- "19. Invoke Model" --> BedrockService
 
 ```
