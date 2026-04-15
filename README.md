@@ -15,6 +15,8 @@ graph TD
   classDef purple fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px,color:#000;
   classDef blue fill:#e6f3ff,stroke:#0073bb,stroke-width:2px,color:#000;
 
+  linkStyle default stroke:#000000,stroke-width:2px,fill:none;
+
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
   end
