@@ -64,10 +64,10 @@ graph TD
   InternalALB -- "7. Traffic (port 8000)" --> SgApi
   SgApi --> ApiService
 
-  ApiService -- "8. Init Job Record" --> EndpointDynamoDB
-  EndpointDynamoDB --> JobsTable
-  ApiService -- "9. Generate Presigned URL" --> EndpointS3
+  ApiService -- "8. Generate Presigned URL" --> EndpointS3
   EndpointS3 --> StorageBucket
+  ApiService -- "9. Init Job Record" --> EndpointDynamoDB
+  EndpointDynamoDB --> JobsTable
   ApiService -- "10. Send Task Message" --> EndpointSQS
   EndpointSQS --> MainQueue
 
