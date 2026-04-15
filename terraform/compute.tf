@@ -13,24 +13,6 @@ resource "aws_ecs_cluster" "agents_cluster" {
   }
 }
 
-// API Logs
-
-resource "aws_cloudwatch_log_group" "api_logs" {
-  name              = "/ecs/${var.project_name}/api"
-  retention_in_days = 30
-  kms_key_id        = aws_kms_key.agents.arn
-}
-
-// Worker Logs
-
-resource "aws_cloudwatch_log_group" "worker_logs" {
-  name              = "/ecs/${var.project_name}/worker"
-  retention_in_days = 30
-  kms_key_id        = aws_kms_key.agents.arn
-}
-
-
-
 // API Task Definition 
 
 resource "aws_ecs_task_definition" "api_task" {
