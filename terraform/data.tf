@@ -212,6 +212,16 @@ data "aws_iam_policy_document" "kms_key_policy" {
       "kms:Decrypt"
     ]
     resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [aws_s3_bucket.agents.arn]
+    }
   }
 }
 
@@ -268,7 +278,30 @@ data "aws_iam_policy_document" "vpc_flow_log" {
 
 
 
+// DynamoDB Resource-Based Policy
 
+data "aws_iam_policy_document" "dynamodb_table_policy" {
+  statement {
+    sid    = "RestrictToVPCEndpoint"
+    effect = "Deny"
+    principals {
+      type        = "AWS"
+      identifiers = ["*"]
+    }
+    actions   = ["dynamodb:*"]
+    resources = [aws_dynamodb_table.jobs.arn]
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:SourceVpce"
+      values   = [aws_vpc_endpoint.dynamodb.id]
+    }
+    condition {
+      test     = "StringNotEquals"
+      variable = "aws:PrincipalType"
+      values   = ["Service"]
+    }
+  }
+}
 
 // DynamoDB Endpoint Policy
 

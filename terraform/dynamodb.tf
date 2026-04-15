@@ -1,5 +1,6 @@
 /*
     DynamoDB tables compatible with the FastAPI app (agents_Jobs, agents_APIKeys)
+    and the policies
 */
 
 // API Keys Table
@@ -59,6 +60,11 @@ resource "aws_dynamodb_table" "jobs" {
   tags = {
     Name = "${var.project_name}-jobs"
   }
+}
+
+resource "aws_dynamodb_resource_policy" "jobs_policy" {
+  resource_arn = aws_dynamodb_table.jobs.arn
+  policy       = data.aws_iam_policy_document.dynamodb_table_policy.json
 }
 
 // VPC Endpoint for DynamoDB
