@@ -10,6 +10,12 @@ variable "region" {
   description = "AWS region"
 }
 
+variable "email" {
+  type        = string
+  default     = null
+  description = "Email for alerts"
+}
+
 variable "project_name" {
   type        = string
   default     = "agents"
@@ -62,6 +68,12 @@ variable "image_tag" {
   type        = string
   default     = "latest"
   description = "The tag of the image to deploy"
+}
+
+variable "log_retention_days" {
+  type        = number
+  default     = 30
+  description = "How long to keep CloudWatch logs"
 }
 
 variable "origins" {
