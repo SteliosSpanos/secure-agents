@@ -64,16 +64,15 @@ graph TD
   InternalALB -- "7. Traffic (port 8000)" --> SgApi
   SgApi --> ApiService
 
-  ApiService -- "8. Generate Presigned URL" --> EndpointS3
+  ApiService -- "8. Generate Presigned URL" --> Client
   EndpointS3 --> StorageBucket
   ApiService -- "9. Init Job Record" --> EndpointDynamoDB
   EndpointDynamoDB --> JobsTable
-  ApiService -- "10. Send Task Message" --> EndpointSQS
   EndpointSQS --> MainQueue
 
-  MainQueue -- "11. S3 Event Notification" --> MainQueue
-  Client -- "12. Upload PDF (Presigned)" --> StorageBucket
-  MainQueue -- "13. Dead Letter" --> DlqQueue
+  StorageBucket -- "10. S3 Event Notification" --> MainQueue
+  Client -- "11. Upload PDF (Presigned)" --> StorageBucket
+  MainQueue -- "12. Dead Letter" --> DlqQueue
   WorkerService -- "14. Long Poll Message" --> EndpointSQS
   WorkerService -- "15. Get Job Status" --> EndpointDynamoDB
   WorkerService -- "16. Download PDF" --> EndpointS3
