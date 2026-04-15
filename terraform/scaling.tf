@@ -24,8 +24,14 @@ resource "aws_appautoscaling_policy" "sqs_target_tracking" {
 
     customized_metric_specification {
       metrics {
-        label = "SQS Backlog per Capacity Unit"
-        id    = "m1"
+        id          = "backlog_per_task"
+        expression  = "m1 / MAX(m2, 1)"
+        label       = "SQS Backlog per Capacity Unit"
+        return_data = true
+      }
+      // Variable m1: SQS queue depth
+      metrics {
+        id = "m1"
         metric_stat {
           metric {
             namespace   = "AWS/SQS"
@@ -37,7 +43,28 @@ resource "aws_appautoscaling_policy" "sqs_target_tracking" {
           }
           stat = "Sum"
         }
-        return_data = true
+        return_data = false
+      }
+
+      // Variable m2: ECS running tasks
+      metrics {
+        id = "m2"
+        metric_stat {
+          metric {
+            namespace   = "AWS/ECS"
+            metric_name = "RunningTaskCount"
+            dimensions {
+              name  = "ClusterName"
+              value = aws_ecs_cluster.agents_cluster.name
+            }
+            dimensions {
+              name  = "ServiceName"
+              value = aws_ecs_service.worker_service.name
+            }
+          }
+          stat = "Average"
+        }
+        return_data = false
       }
     }
   }
