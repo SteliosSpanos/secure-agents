@@ -59,30 +59,6 @@ resource "aws_route_table_association" "agents_private_assoc_2" {
   route_table_id = aws_route_table.agents_private_rt.id
 }
 
-// VPC Flow Logs
-
-resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
-  name              = "/aws/vpc-flow-logs/${var.project_name}"
-  retention_in_days = 30
-  kms_key_id        = aws_kms_key.agents.arn
-
-  tags = {
-    Name = "${var.project_name}-vpc-flow-logs"
-  }
-}
-
-resource "aws_flow_log" "agents_vpc_flow_log" {
-  vpc_id               = aws_vpc.agents_vpc.id
-  traffic_type         = "ALL"
-  iam_role_arn         = aws_iam_role.vpc_flow_log.arn
-  log_destination      = aws_cloudwatch_log_group.vpc_flow_logs.arn
-  log_destination_type = "cloud-watch-logs"
-
-  tags = {
-    Name = "${var.project_name}-vpc-flow-log"
-  }
-}
-
 // These endpoints cover the 'hidden' dependencies required for Fargate
 // 1. ECR, 2. Logs, 3. KMS, 4. SQS, 5. Bedrock
 
