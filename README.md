@@ -27,12 +27,12 @@ graph TD
       InternalALB[("Internal ALB")]
 
       subgraph VpcEndpoints["VPC Endpoints (Interface & Gateway)"]
-        EndpointSQS[("SQS")]
-        EndpointDynamoDB[("DynamoDB")]
-        EndpointS3[("S3")]
-        EndpointKMS[("KMS")]
-        EndpointSTS[("STS")]
-        EndpointECR[("ECR")]
+        EndpointSQS["SQS"]
+        EndpointDynamoDB["DynamoDB"]
+        EndpointS3["S3"]
+        EndpointKMS["KMS"]
+        EndpointSTS["STS"]
+        EndpointECR["ECR"]
       end
 
       MainQueue[("SQS:<br>agent-work-queue")]
