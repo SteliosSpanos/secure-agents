@@ -229,14 +229,14 @@ SecureAgents/
 
 We optimized for a "Pay-as-you-Grow" model while maintaining enterprise-grade security.
 
-| Service                | Estimated Cost  | Logic                                                   |
-| :--------------------- | :-------------- | :------------------------------------------------------ |
-| **VPC Endpoints**      | ~$35 - $50      | S3, SQS, KMS, Bedrock, ECR. Replaces NAT Gateway costs. |
-| **Compute (Fargate)**  | ~$25 - $40      | 2x small API tasks + fluctuating workers (scales to 0). |
-| **Load Balancing**     | ~$20            | Internal ALB base cost for high availability.           |
-| **Database & Storage** | ~$5             | S3, DynamoDB, SQS (pay-per-request/GB).                 |
-| **AI (Bedrock)**       | Variable        | Billed per 1,000 tokens (Llama 3 is highly affordable). |
-| **Total Base**         | **~$85 - $115** | Production-grade security for less than $4/day.         |
+| Service                | Estimated Cost   | Logic                                                   |
+| :--------------------- | :--------------- | :------------------------------------------------------ |
+| **VPC Endpoints**      | ~$75 - $100      | S3, SQS, KMS, Bedrock, ECR. Replaces NAT Gateway costs. |
+| **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0). |
+| **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.           |
+| **Database & Storage** | ~$5              | S3, DynamoDB, SQS (pay-per-request/GB).                 |
+| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Llama 3 is highly affordable). |
+| **Total Base**         | **~$125 - $165** | Production-grade security for less than $4/day.         |
 
 ---
 
