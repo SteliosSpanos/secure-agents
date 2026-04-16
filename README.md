@@ -181,8 +181,6 @@ SecureAgents/
 │   │   ├── aws_client.py       # Boto3 wrappers for S3, SQS, DynamoDB
 │   │   ├── config.py           # Environment-based configuration (Pydantic)
 │   │   └── main.py             # FastAPI routes & logic
-│   ├── authorizer.py           # Lambda code for API Key validation
-│   ├── client_key_script.py    # Utility to create & hash client API keys
 │   ├── .dockerignore           # Prevents local junk from entering containers
 │   ├── .env.example            # Template for local environment variables
 │   ├── Dockerfile              # Multi-stage build (Builder + Runtime)
@@ -197,6 +195,12 @@ SecureAgents/
 │   ├── .env.example            # Worker environment template
 │   ├── Dockerfile              # Lightweight worker container
 │   └── requirements.txt        # Python dependencies (pypdf, etc.)
+│
+├── lambda-authorizer/          # API Gateway Custom Authorizer
+│   └── authorizer.py           # Lambda code for API Key validation
+│
+├── scripts/                    # Management & Utility Scripts
+│   └── client_key_script.py    # Utility to create & hash client API keys
 │
 └── terraform/                  # Infrastructure as Code (AWS)
     ├── alb.tf                  # Internal Load Balancer config
@@ -253,7 +257,7 @@ terraform apply
 Generate a secure key for a client and store it in DynamoDB:
 
 ```bash
-python agent-api/client_key_script.py --client-id "LawFirm_A"
+python scripts/client_key_script.py --client-id "LawFirm_A"
 ```
 
 ### 3. The Processing Workflow
