@@ -1,4 +1,5 @@
 import boto3
+import time
 import logging
 import re
 from datetime import datetime, timezone
@@ -114,6 +115,10 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
 
 def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
     """Logs the job as PENDING to ensure auditability before upload starts"""
+
+    # The TTL is set to 24 hours from now if it's garbage
+    expiration = int(time.time()) + (24 * 60 * 60)
+
     try:
        jobs_table.put_item(
         Item={
@@ -121,7 +126,8 @@ def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
             "job_id": job_id,
             "status": "PENDING_UPLOAD",
             "s3_path": s3_path,
-            "created_at": datetime.now(timezone.utc).isoformat()
+            "created_at": datetime.now(timezone.utc).isoformat(),
+            "expires_at": expiration
         }
        )
     except (ClientError, BotoCoreError) as e:
