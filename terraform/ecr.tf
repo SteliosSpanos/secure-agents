@@ -89,8 +89,7 @@ resource "aws_ecr_lifecycle_policy" "worker_policy" {
 
 // Null Resource
 // Automatically push an empty image to the API repo
-
-resource "null_resource" "worker_bootstrap_image" {
+resource "null_resource" "api_bootstrap_image" {
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     command     = <<EOF
@@ -106,8 +105,7 @@ resource "null_resource" "worker_bootstrap_image" {
 
 // Null Resource
 // Automatically push an empty image to the Worker repo
-
-resource "null_resource" "api_bootstrap_image" {
+resource "null_resource" "worker_bootstrap_image" {
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     command     = <<EOF
