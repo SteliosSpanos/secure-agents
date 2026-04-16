@@ -334,10 +334,7 @@ data "aws_iam_policy_document" "dynamodb_endpoint_policy" {
       "dynamodb:PutItem",
       "dynamodb:UpdateItem"
     ]
-    resources = [
-      aws_dynamodb_table.api_keys.arn,
-      aws_dynamodb_table.jobs.arn
-    ]
+    resources = [aws_dynamodb_table.jobs.arn]
     condition {
       test     = "StringEquals"
       variable = "aws:PrincipalAccount"
@@ -413,7 +410,6 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     effect = "Allow"
     actions = [
       "dynamodb:GetItem",
-      "dynamodb:PutItem",
       "dynamodb:UpdateItem"
     ]
     resources = [aws_dynamodb_table.jobs.arn]

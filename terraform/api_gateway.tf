@@ -74,7 +74,7 @@ resource "aws_apigatewayv2_stage" "default_stage" {
 
 data "archive_file" "authorizer_zip" {
   type        = "zip"
-  source_file = "../agent-api/authorizer.py"
+  source_file = "../lambda-authorizer/authorizer.py"
   output_path = "authorizer.zip"
 }
 

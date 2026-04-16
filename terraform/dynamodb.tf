@@ -57,6 +57,11 @@ resource "aws_dynamodb_table" "jobs" {
     enabled = true
   }
 
+  ttl {
+    attribute_name = "expires_at"
+    enabled        = true
+  }
+
   tags = {
     Name = "${var.project_name}-jobs"
   }
