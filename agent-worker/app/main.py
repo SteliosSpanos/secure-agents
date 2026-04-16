@@ -126,25 +126,40 @@ def process_document(bucket: str, key: str) -> str:
     return summary.strip()
 
 
-def update_job(client_id: str, job_id: str, status_val: str, result_summary: str | None = None):
+def update_job(client_id: str, job_id: str, status_val: str, result_summary: str | None = None, expected_status: str | None = None) -> bool:
     """Updates the DynamoDB table with status and optional summary."""
+
+    new_expiration = int(time.time()) + (30 * 24 * 60 * 60)
+
+    update_expr = "SET #s = :s, expires_at = :ttl"
+    expr_names = {"#s": "status"}
+    expr_values = {
+        ":s": status_val.upper(),
+        ":ttl": new_expiration
+    }
+
     if result_summary:
-        jobs_table.update_item(
-            Key={"client_id": client_id, "job_id": job_id},
-            UpdateExpression="SET #s = :s, result_summary = :r",
-            ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={
-                ":s": status_val.upper(),
-                ":r": result_summary
-            }
-        )
-    else:
-        jobs_table.update_item(
-            Key={"client_id": client_id, "job_id": job_id},
-            UpdateExpression="SET #s = :s",
-            ExpressionAttributeNames={"#s": "status"},
-            ExpressionAttributeValues={":s": status_val.upper()}
-        )
+        update_expr += ", result_summary = :r"
+        expr_values[":r"] = result_summary
+
+    kwargs = {
+        "Key": {"client_id": client_id, "job_id": job_id},
+        "UpdateExpression": update_expr,
+        "ExpressionAttributeNames": expr_names,
+        "ExpressionAttributeValues": expr_values
+    }
+
+    if expected_status:
+        kwargs["ConditionExpression"] = "#s = :expected_status"
+        kwargs["ExpressionAttributeValues"][":expected_status"] = expected_status
+
+    try:
+        jobs_table.update_item(**kwargs)
+        return True
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            return False
+        raise
 
 
 
@@ -184,26 +199,24 @@ def main():
                             logger.warning(f"Malformed S3 key: {key}")
                             continue
 
+                        lock_acquired = update_job(
+                            client_id,
+                            job_id,
+                            status_val="PROCESSING",
+                            expected_status="PENDING_UPLOAD"
+                        )
 
-                        # Extreme Edge Case
-                        try:
-                            response = jobs_table.get_item(Key={"client_id": client_id, "job_id": job_id})
-                            item = response.get("Item", {})
-
-                            if item.get("status") == "COMPLETED":
-                                logger.info(f"Job {job_id} already COMPLETED. Skipping duplcate processing.")
-                                continue
-                        except (ClientError, BotoCoreError):
-                            logger.warning(f"Could not verify status for {job_id}.")
-
+                        if not lock_acquired:
+                            logger.info(f"Job {job_id} lock denied (already processing/completed).")
+                            continue
 
                         try:
-                            update_job(client_id, job_id, "PROCESSING")
                             summary = process_document(bucket, key)
                             update_job(client_id, job_id, "COMPLETED", result_summary=summary)
                             logger.info(f"Job {job_id} successfully completed for client {client_id}.")
                         except (ClientError, BotoCoreError):
                             logger.exception(f"Retryable AWS error for job {job_id}.")
+                            update_job(client_id, job_id, "PENDING_UPLOAD")
                             raise
                         except Exception as e:
                             logger.exception(f"Fatal error for job {job_id}.")
