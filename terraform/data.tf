@@ -293,15 +293,28 @@ data "aws_iam_policy_document" "dynamodb_table_policy" {
     }
     actions   = ["dynamodb:*"]
     resources = [aws_dynamodb_table.jobs.arn]
+
     condition {
       test     = "StringNotEquals"
       variable = "aws:SourceVpce"
       values   = [aws_vpc_endpoint.dynamodb.id]
     }
+
     condition {
       test     = "StringNotEquals"
       variable = "aws:PrincipalType"
       values   = ["Service"]
+    }
+
+    // Prevent lockout. Allow the account root to always manage the policy.
+    condition {
+      test     = "ArnNotLike"
+      variable = "aws:PrincipalArn"
+      values = [
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
+        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/GithubActionsRole",
+        data.aws_caller_identity.current.arn
+      ]
     }
   }
 }
@@ -487,10 +500,7 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
       "sqs:GetQueueAttributes",
       "sqs:ChangeMessageVisibility"
     ]
-    resources = [
-      aws_sqs_queue.agent_queue.arn,
-      aws_sqs_queue.agent_dlq.arn
-    ]
+    resources = [aws_sqs_queue.agent_queue.arn]
   }
 }
 
