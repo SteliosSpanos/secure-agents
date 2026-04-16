@@ -8,6 +8,4 @@ __pycache__/
 .gitignore
 Dockerfile
 .dockerignore
-client_key_script.py
-authorizer.py
 README.md
