@@ -83,26 +83,28 @@ graph TD
 
   ApiService -- "8. Generate Presigned URL" --> Client
   ApiService -- "9. Init Job Record" --> EndpointDynamoDB
-  EndpointDynamoDB --> JobsTable
-  EndpointSQS --> MainQueue
-  EndpointS3 --> StorageBucket
 
-  StorageBucket -- "10. S3 Event Notification" --> MainQueue
-  Client -- "11. Upload PDF (Presigned)" --> StorageBucket
-  MainQueue -- "12. Dead Letter" --> DlqQueue
+  Client -- "10. Upload PDF (Presigned)" --> StorageBucket
+  StorageBucket -- "11. S3 Event Notification" --> MainQueue
 
-  WorkerService -- "14. Long Poll Message" --> EndpointSQS
-  WorkerService -- "15. Get Job Status" --> EndpointDynamoDB
-  WorkerService -- "16. Download PDF" --> EndpointS3
-  WorkerService -- "17. Assume Task Role" --> EndpointSTS
-  WorkerService -- "18. Decrypt Data" --> EndpointKMS
-  EndpointKMS --> KmsKey
+  MainQueue -- "12. Dead Letter (On Fail)" --> DlqQueue
 
   SgWorker --> WorkerService
-  WorkerService -- "19. Invoke Model" --> EndpointBedrock
-  EndpointBedrock --> BedrockService
+  WorkerService -- "13. Long Poll Message" --> EndpointSQS
+  WorkerService -- "14. Get Job Status" --> EndpointDynamoDB
+  WorkerService -- "15. Download PDF" --> EndpointS3
+  WorkerService -- "16. Assume Task Role" --> EndpointSTS
+  WorkerService -- "17. Decrypt Data" --> EndpointKMS
+  WorkerService -- "18. Invoke Model" --> EndpointBedrock
 
-  %% ECR Image Pulls
+  WorkerService -- "19. Write Final Result" --> EndpointDynamoDB
+
+  EndpointDynamoDB -. "Route" .-> JobsTable
+  EndpointSQS -. "Route" .-> MainQueue
+  EndpointS3 -. "Route" .-> StorageBucket
+  EndpointKMS -. "Route" .-> KmsKey
+  EndpointBedrock -. "Route" .-> BedrockService
+
   EcrRegistry --> EndpointECR
   EndpointECR -. "Pull Image" .-> ApiService
   EndpointECR -. "Pull Image" .-> WorkerService
