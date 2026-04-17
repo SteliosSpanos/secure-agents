@@ -69,8 +69,8 @@ data "aws_iam_policy_document" "github_actions_permissions" {
   statement {
     effect = "Allow"
     actions = [
-      "ecr:UpdateService",
-      "ecr:DescribeServices"
+      "ecs:UpdateService",
+      "ecs:DescribeServices"
     ]
     resources = [
       aws_ecs_service.api_service.id,
