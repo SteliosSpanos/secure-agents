@@ -125,7 +125,7 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
 
 
 
-// KMS Resource-Based Key Policy
+// Shared KMS Policy
 
 data "aws_iam_policy_document" "kms_key_policy" {
   statement {
@@ -133,24 +133,9 @@ data "aws_iam_policy_document" "kms_key_policy" {
     effect = "Allow"
     principals {
       type        = "AWS"
-      identifiers = [data.aws_caller_identity.current.arn]
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
     }
-    actions = [
-      "kms:Create*",
-      "kms:Describe*",
-      "kms:Enable*",
-      "kms:List*",
-      "kms:Put*",
-      "kms:Update*",
-      "kms:Revoke*",
-      "kms:Disable*",
-      "kms:Get*",
-      "kms:Delete*",
-      "kms:TagResource",
-      "kms:UntagResource",
-      "kms:ScheduleKeyDeletion",
-      "kms:CancelKeyDeletion"
-    ]
+    actions   = ["kms:*"]
     resources = ["*"]
   }
 
@@ -162,7 +147,6 @@ data "aws_iam_policy_document" "kms_key_policy" {
       identifiers = [
         aws_iam_role.api_task_role.arn,
         aws_iam_role.agent_task_role.arn,
-        aws_iam_role.ecs_execution_role.arn,
         aws_iam_role.authorizer_role.arn
       ]
     }
@@ -225,6 +209,73 @@ data "aws_iam_policy_document" "kms_key_policy" {
       variable = "aws:SourceArn"
       values   = [aws_s3_bucket.agents.arn]
     }
+  }
+}
+
+// API Keys Table KMS Policy
+
+data "aws_iam_policy_document" "api_keys_table_kms_policy" {
+  statement {
+    sid    = "KeyAdministrator"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "KeyUsage"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [aws_iam_role.authorizer_role.arn]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:Encrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey"
+    ]
+    resources = ["*"]
+  }
+}
+
+// Jobs Table KMS Policy
+
+data "aws_iam_policy_document" "jobs_table_kms_policy" {
+  statement {
+    sid    = "KeyAdministrator"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "KeyUsage"
+    effect = "Allow"
+    principals {
+      type = "AWS"
+      identifiers = [
+        aws_iam_role.api_task_role.arn,
+        aws_iam_role.agent_task_role.arn
+      ]
+    }
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey"
+    ]
+    resources = ["*"]
   }
 }
 
