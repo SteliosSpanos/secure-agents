@@ -17,7 +17,7 @@ resource "aws_dynamodb_table" "api_keys" {
 
   server_side_encryption {
     enabled     = true
-    kms_key_arn = aws_kms_key.agents.arn
+    kms_key_arn = aws_kms_key.api_keys_table.arn
   }
 
   // we can recover any data from any time
@@ -55,7 +55,7 @@ resource "aws_dynamodb_table" "jobs" {
 
   server_side_encryption {
     enabled     = true
-    kms_key_arn = aws_kms_key.agents.arn
+    kms_key_arn = aws_kms_key.jobs_table.arn
   }
 
   point_in_time_recovery {
