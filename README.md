@@ -183,7 +183,13 @@ To rotate a key without downtime:
 
 1.  Generate a new key: `python scripts/client_key_script.py --client-id "ClientName"`
 2.  Provide the new key to the client.
-3.  Once the client has switched, an **Administrator/Operator** must manually deactivate the old key in the `agents_APIKeys` DynamoDB table (via AWS Console or CLI). Setting `active = false` immediately revokes access.
+3.  Once the client confirms they have switched to the new key, an Administrator safely deactivates the old one using the management script:
+
+    ```bash
+    python scripts/client_key_script.py --deactivate "ak_live_123456789..."
+    ```
+
+    This instantly blocks the key at the Edge (`active = false`) and applies a 90-day TTL (`expires_at`), ensuring the hash remains available for security audits before DynamoDB automatically deletes it.
     - _Note: For security, neither the API nor the Worker have permissions to modify this table._
 
 ### 2. Handling Stuck Jobs & DLQ
