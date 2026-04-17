@@ -341,7 +341,7 @@ curl -H "x-api-key: ak_live_..." https://<CF_URL>/api/v1/jobs/<job_id>
 
 ---
 
-## 💸 Cost Controls (Estimated Monthly)
+## Estimated Monthly Costs
 
 We optimized for a "Pay-as-you-Grow" model while maintaining enterprise-grade security.
 
