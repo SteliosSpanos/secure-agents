@@ -99,6 +99,7 @@ resource "aws_lambda_function" "authorizer" {
   environment {
     variables = {
       API_KEYS_TABLE = aws_dynamodb_table.api_keys.name
+      ORIGIN_SECRET  = random_password.origin_secret.result
     }
   }
 }

@@ -31,13 +31,13 @@ resource "aws_cloudfront_distribution" "api_dist" {
   }
 
   default_cache_behavior {
-    allowed_methods  = ["DELETE", "GET", "HEAD", "OPTIONS", "PATCH", "POST", "PUT"]
+    allowed_methods  = ["GET", "HEAD", "OPTIONS", "POST"]
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "APIGateway"
 
     forwarded_values {
       query_string = true
-      headers      = ["Authorization", "x-api-key"]
+      headers      = ["x-api-key"]
       cookies {
         forward = "none"
       }

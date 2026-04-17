@@ -3,6 +3,8 @@
 */
 
 resource "aws_wafv2_web_acl" "api_waf" {
+  provider = aws.global
+
   name        = "${var.project_name}-waf"
   description = "WAF for Cloudfront with Rate Limiting and Manged Rules"
   scope       = "CLOUDFRONT"
