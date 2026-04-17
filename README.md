@@ -1,12 +1,12 @@
 # SecureAgents: Zero-Trust AI Document Pipeline
 
-SecureAgents is a high-security, B2B SaaS infrastructure designed for industries where data privacy is non-negotiable (Legal, Medical, Finance). It provides a fully automated pipeline that ingests sensitive PDF documents, processes them using private AI models, and returns structured insights—all while ensuring the data never touches the public internet.
+SecureAgents is a high-security, B2B SaaS infrastructure designed for industries where data privacy is non-negotiable (Legal, Medical, Finance). It provides a fully automated pipeline that ingests sensitive PDF documents, processes them using private AI models, and returns structured insights, all while ensuring the data never touches the public internet.
 
 ---
 
 ## The Architecture: Why We Made These Decisions
 
-Modern AI applications often sacrifice privacy for speed. SecureAgents was built with a "Security First, Cloud Second" mindset.
+SecureAgents was built with a "Security First, Cloud Second" mindset. We use a defense-in-depth strategy that starts at the edge and goes deep into the VPC.
 
 ```mermaid
 graph TD
@@ -23,10 +23,12 @@ graph TD
   class PublicInternet orange;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
+    WAF["AWS WAF<br>(Rate Limiting + Managed Rules)"]
+    CloudFront["CloudFront Distribution<br>(Global Edge)"]
     APIGW[("AWS API Gateway<br>(HTTP API)")]
 
     subgraph AuthLayer["Identity & Auth"]
-      Authorizer["Lambda Authorizer"]
+      Authorizer["Lambda Authorizer<br>(X-Origin-Verify)"]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
     class AuthLayer purple;
@@ -70,30 +72,30 @@ graph TD
   end
   class AWSCloud orange;
 
+  Client -- "1. Secure Request" --> WAF
+  WAF --> CloudFront
+  CloudFront -- "2. Forward + X-Origin-Verify" --> APIGW
+  APIGW -- "3. Validate Edge + API Key" --> Authorizer
+  Authorizer -- "4. Query Hash" --> ApiKeysTable
+  Authorizer -- "5. Return context" --> APIGW
 
-  Client -- "1. Request + x-api-key" --> APIGW
-  APIGW -- "2. Validate Key" --> Authorizer
-  Authorizer -- "3. Query Hash" --> ApiKeysTable
-  Authorizer -- "4. Return isAuthorized + context" --> APIGW
-
-  APIGW -- "5. Forward (VPC Link)" --> VpcLinkENI
-  VpcLinkENI -- "6. Forward (port 80)" --> InternalALB
-  InternalALB -- "7. Traffic (port 8000)" --> SgApi
+  APIGW -- "6. Forward (VPC Link)" --> VpcLinkENI
+  VpcLinkENI -- "7. Forward (port 80)" --> InternalALB
+  InternalALB -- "8. Traffic (port 8000)" --> SgApi
   SgApi --> ApiService
 
-  ApiService -- "8. Generate Presigned URL" --> Client
-  ApiService -- "9. Init Job Record" --> EndpointDynamoDB
+  ApiService -- "9. Generate Presigned URL" --> Client
+  ApiService -- "10. Init Job Record" --> EndpointDynamoDB
 
-  Client -- "10. Upload PDF (Presigned)" --> StorageBucket
-  StorageBucket -- "11. S3 Event Notification" --> MainQueue
+  Client -- "11. Upload PDF (Presigned)" --> StorageBucket
+  StorageBucket -- "12. S3 Event Notification" --> MainQueue
 
-  MainQueue -- "12. Dead Letter (On Fail)" --> DlqQueue
+  MainQueue -- "13. Dead Letter (On Fail)" --> DlqQueue
 
   SgWorker --> WorkerService
-  WorkerService -- "13. Long Poll Message" --> EndpointSQS
-  WorkerService -- "14. Get Job Status" --> EndpointDynamoDB
-  WorkerService -- "15. Download PDF" --> EndpointS3
-  WorkerService -- "16. Assume Task Role" --> EndpointSTS
+  WorkerService -- "14. Long Poll Message" --> EndpointSQS
+  WorkerService -- "15. Get Job Status" --> EndpointDynamoDB
+  WorkerService -- "16. Download PDF" --> EndpointS3
   WorkerService -- "17. Decrypt Data" --> EndpointKMS
   WorkerService -- "18. Invoke Model" --> EndpointBedrock
 
@@ -110,163 +112,246 @@ graph TD
   EndpointECR -. "Pull Image" .-> WorkerService
 ```
 
-### 1. API Gateway + Internal ALB (The Double Shield)
+### Key Architectural Decisions (ADRs)
 
-We use **Amazon API Gateway** as our public entry point to handle authentication via a custom Lambda Authorizer. However, the actual FastAPI application sits behind an **Internal Application Load Balancer (ALB)**.
-
-- **Decision:** Split public ingress from private compute.
-- **Why?** This separation ensures our application servers have **no public IP addresses**. They live in strictly private subnets, accessible only through the API Gateway's VPC Link. This eliminates a huge class of direct-to-server attacks and ensures zero internet-exposed ports on our compute resources.
-
-### 2. AWS Fargate vs. Lambda
-
-- **Decision:** Fargate for both API and Worker nodes.
-- **Why?**
-  - **Consistent Performance:** PDF processing and LLM orchestration often exceed Lambda's 15-minute timeout or memory limits. Fargate provides a persistent runtime with dedicated resources.
-  - **Worker Long-Polling:** Our workers use SQS long-polling (20 seconds) to minimize API call costs while maintaining a persistent connection. This is more efficient for high-volume pipelines than frequent Lambda cold starts and helps the worker scale dynamically from 0.
-  - **Deep Monitoring:** Fargate allows us to implement kernel-level security monitoring (like eBPF) and use standard container security tools, which isn't possible in the restricted Lambda environment.
-
-### 3. Amazon Bedrock (Private Inference)
-
-- **Decision:** Serverless AI via Bedrock.
-- **Why?** Unlike public AI APIs (where data might cross the internet and be used for training), Bedrock ensures your data is **never used to train the base models**. By using **VPC Interface Endpoints**, the data travels from our private S3 bucket to Bedrock over the AWS private network, never crossing the public internet.
-
-### 4. SQS & S3 Event-Driven Pattern (Producer-Consumer)
-
-- **Decision:** Use SQS as the glue between S3 and the Worker.
-- **Why?**
-  - **Durability:** Even if the Worker service is offline or scaling up, the work is safely buffered in SQS.
-  - **Scalability:** SQS allows us to scale the number of worker tasks based on the number of messages waiting in the queue (the "backlog per task" metric).
-  - **Reliability:** Dead Letter Queues (DLQ) ensure that failing jobs are isolated for debugging rather than blocking the entire pipeline.
-
-### 5. No NAT Gateway (Zero-Egress Design)
-
-- **Decision:** Rely entirely on VPC Endpoints.
-- **Why?** NAT Gateways are expensive (~$32/month base + data charges) and create a path for data exfiltration. Our "Zero-Egress" approach means our containers **cannot call home** or talk to anything except the specific AWS services they need to function. This significantly reduces the attack surface and monthly cloud spend.
+1.  **WAF & CloudFront (Edge Defense):**
+    - **Decision:** Use AWS WAF attached to CloudFront with a custom `X-Origin-Verify` header requirement at the API Gateway.
+    - **Why?** Protects against DDoS and common web exploits (SQLi, XSS) before traffic reaches our infrastructure. The custom header ensures that users cannot bypass the WAF by hitting the API Gateway endpoint directly.
+2.  **API Gateway + Internal ALB (The Double Shield):**
+    - **Decision:** Split public ingress from private compute using a VPC Link.
+    - **Why?** Ensures our application servers have **no public IP addresses**. They live in strictly private subnets, accessible only through the API Gateway.
+3.  **AWS Fargate vs. Lambda:**
+    - **Decision:** Fargate for both API and Worker nodes.
+    - **Why?** PDF processing and LLM orchestration often exceed Lambda's 15-minute timeout. Fargate provides a persistent runtime with dedicated resources and supports SQS long-polling (20s) natively.
+4.  **Amazon Bedrock (Private Inference):**
+    - **Decision:** Serverless AI via Bedrock.
+    - **Why?** Ensures data is **never used to train base models**. Via VPC Endpoints, data travels from S3 to Bedrock over the AWS private network, never crossing the public internet.
+5.  **SQS Standard vs. FIFO:**
+    - **Decision:** SQS Standard Queue.
+    - **Why?** For document processing, absolute ordering isn't required, but high throughput and "at-least-once" delivery are critical. FIFO adds complexity and cost that aren't justified for this use case.
 
 ---
 
-## Security Breakdown (The Zero-Trust Moat)
+## Prerequisites & Environment Setup
 
-SecureAgents implements a defense-in-depth strategy across every layer of the stack.
+### Required Tools
 
-### Network Isolation
+- **Terraform:** `>= 1.5`
+- **Python:** `3.11`
+- **AWS CLI:** `v2`
+- **Docker:** (For building images)
 
-- **Private Subnets:** No compute resources have public IP addresses.
-- **VPC Endpoints:** All AWS traffic (S3, SQS, KMS, Bedrock, DynamoDB) stays within the AWS private network.
-- **Security Groups:** Tiered rules enforce strict traffic flows (VPC Link -> ALB -> Fargate API -> Fargate Worker).
+### Deployment IAM Permissions
 
-### IAM (Identity and Access Management)
+The user/role deploying the stack needs a policy covering:
 
-- **Least-Privilege Roles:** Each component has its own dedicated IAM role. The API can only upload to S3; the Worker can only read from S3, poll SQS, and invoke Bedrock.
-- **No Long-Lived Credentials:** All authentication uses temporary credentials issued via IAM Task Roles.
+- `AdministratorAccess` (recommended for initial setup) OR fine-grained permissions for: EC2 (VPC/SGs), ECS, ECR, S3, DynamoDB, SQS, KMS, Bedrock, IAM, CloudFront, WAF, and Lambda.
 
-### Encryption at Rest & In Transit
+### Terraform Backend Bootstrap
 
-- **KMS Managed Keys:** A Customer Managed Key (CMK) encrypts everything: S3 buckets, DynamoDB tables, SQS queues, and CloudWatch Logs.
-- **TLS 1.2+ Everywhere:** Every request, from the client to the API Gateway and internally between AWS services, is encrypted in transit.
+1.  Navigate to `terraform/`.
+2.  Ensure `backend.tf` is configured but the `terraform` block in `providers.tf` is commented out.
+3.  Run `terraform init` and `terraform apply` (this creates the state bucket and lock table).
+4.  Uncomment the `backend` block in `providers.tf`, update the bucket name/account ID, and run `terraform init -migrate-state`.
 
-### Zero-Trust Edge
+### The "Chicken-and-Egg" Image Problem
 
-- **Lambda Authorizer:** Every incoming request is validated at the API Gateway by a custom Lambda function that checks an `x-api-key` against hashed records in DynamoDB. Traffic never enters the VPC unless it is authenticated.
+The ECS services require an image to exist in ECR before they can start. The Terraform code uses a `null_resource` to push a dummy "scratch" image to ECR during initial creation. This allows Terraform to complete, but **the API/Worker will fail until you push real images.**
 
----
+```bash
+# Push real API image
+aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com
+docker build -t <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-api:latest ./agent-api
+docker push <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-api:latest
 
-## Project Structure: Every File Explained
+# Push real Worker image
+docker build -t <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-worker:latest ./agent-worker
+docker push <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-worker:latest
 
-```text
-SecureAgents/
-├── agent-api/                  # FastAPI Ingestion Service
-│   ├── app/
-│   │   ├── __init__.py         # Package initialization
-│   │   ├── aws_client.py       # Boto3 wrappers for S3, SQS, DynamoDB
-│   │   ├── config.py           # Environment-based configuration (Pydantic)
-│   │   └── main.py             # FastAPI routes & logic
-│   ├── .dockerignore           # Prevents local junk from entering containers
-│   ├── .env.example            # Template for local environment variables
-│   ├── Dockerfile              # Multi-stage build (Builder + Runtime)
-│   └── requirements.txt        # Python dependencies (FastAPI, Boto3, etc.)
-│
-├── agent-worker/               # AI Processing Daemon
-│   ├── app/
-│   │   ├── __init__.py         # Package initialization
-│   │   ├── config.py           # Environment-based configuration
-│   │   └── main.py             # SQS Listener & Bedrock Orchestrator
-│   ├── .dockerignore           # Keeps worker images lean
-│   ├── .env.example            # Worker environment template
-│   ├── Dockerfile              # Lightweight worker container
-│   └── requirements.txt        # Python dependencies (pypdf, etc.)
-│
-├── lambda-authorizer/          # API Gateway Custom Authorizer
-│   └── authorizer.py           # Lambda code for API Key validation
-│
-├── scripts/                    # Management & Utility Scripts
-│   └── client_key_script.py    # Utility to create & hash client API keys
-│
-└── terraform/                  # Infrastructure as Code (AWS)
-    ├── alb.tf                  # Internal Load Balancer config
-    ├── api_gateway.tf          # Public API Gateway & Lambda Authorizer
-    ├── backend.tf              # S3/DynamoDB state locking
-    ├── cloudwatch.tf           # Log groups and retention policies
-    ├── compute.tf              # ECS Cluster & Fargate Task Definitions
-    ├── data.tf                 # Dynamic AWS data (AZs, Account ID, etc.)
-    ├── dynamodb.tf             # Tables for Jobs and API Keys
-    ├── ecr.tf                  # Container Registries for API and Worker
-    ├── iam.tf                  # Fine-grained IAM Roles & Policies
-    ├── kms.tf                  # Encryption Key Management (Central CMK)
-    ├── network.tf              # VPC, Private Subnets, and Interface Endpoints
-    ├── outputs.tf              # Key deployment values (API URL, etc.)
-    ├── providers.tf            # AWS Provider & Global Tagging
-    ├── s3.tf                   # Secure Storage Vault with Versioning
-    ├── scaling.tf              # SQS-based Auto-scaling for Workers
-    ├── security.tf             # Security Groups (Stateful Firewalls)
-    ├── sqs.tf                  # Work Queue & Dead Letter Queue (DLQ)
-    └── variables.tf            # Input variable definitions
+# Trigger ECS redeploy
+aws ecs update-service --cluster agents-cluster --service agents-api-service --force-new-deployment
+aws ecs update-service --cluster agents-cluster --service agents-worker-service --force-new-deployment
 ```
 
 ---
 
-## Cost Efficiency (Estimated Monthly)
+## Operational Runbooks
+
+### 1. Rotating Client API Keys
+
+To rotate a key without downtime:
+
+1.  Generate a new key: `python scripts/client_key_script.py --client-id "ClientName"`
+2.  Provide the new key to the client.
+3.  Once the client has switched, an **Administrator/Operator** must manually deactivate the old key in the `agents_APIKeys` DynamoDB table (via AWS Console or CLI). Setting `active = false` immediately revokes access.
+    - _Note: For security, neither the API nor the Worker have permissions to modify this table._
+
+### 2. Handling Stuck Jobs & DLQ
+
+If a job is stuck in `PROCESSING` for > 15 minutes or fails 3 times, it moves to the `agents-dlq`.
+
+- **Check DLQ:** `aws sqs receive-message --queue-url <DLQ_URL>`
+- **Reprocess:** Use the AWS Management Console to "Start DLQ redrive" back to the main queue, or manually fix the issue (e.g., Bedrock quota reached) and redrive.
+- **Stuck Jobs:** Check if the worker task crashed. Fargate will automatically restart it, but the job status in DynamoDB might need manual reset to `PENDING_UPLOAD` to allow a retry.
+
+### 3. Scaling Workers Manually
+
+Auto-scaling is based on SQS backlog (10 messages per task). To scale manually:
+
+```bash
+aws ecs update-service --cluster agents-cluster --service agents-worker-service --desired-count 5
+```
+
+### 4. Tailing Logs
+
+All logs are centralized in CloudWatch.
+
+- **API Logs:** `aws logs tail /aws/ecs/agents-api --follow`
+- **Worker Logs:** `aws logs tail /aws/ecs/agents-worker --follow`
+- **Authorizer:** `aws logs tail /aws/lambda/agents-authorizer --follow`
+
+### 5. Clean Teardown
+
+To destroy the stack without leaving orphaned resources:
+
+1.  **Empty S3 Buckets:** `aws s3 rm s3://<BUCKET_NAME> --recursive`
+2.  **Delete ECR Images:** `aws ecr batch-delete-image --repository-name agents-api --image-ids "$(aws ecr list-images --repository-name agents-api --query 'imageIds[*]' --output json)"`
+3.  **Run Terraform:** `terraform destroy` (Note: KMS keys have a 7-30 day deletion window).
+
+---
+
+## Security Policy & Threat Model
+
+### Threat Model
+
+- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting and CloudFront geo-blocking.
+- **API Key Theft:** Mitigated by hashing keys in DynamoDB and requiring `X-Origin-Verify` headers to prevent direct Gateway access.
+- **Data Exfiltration:** Mitigated by Zero-Egress VPC design; containers have no path to the public internet.
+- **Unauthorized Data Access:** S3 and DynamoDB policies restrict access strictly to the VPC Endpoints and Task Roles.
+
+### Data Handling Policy
+
+- **Transient Storage:** Documents are stored in S3 only for the duration of processing.
+- **TTL (Time To Live):**
+  - **Jobs Table:** Records expire after 30 days (auto-deleted by DynamoDB).
+  - **S3:** (Recommended) Set a lifecycle policy to transition to Glacier or delete after 30 days.
+
+### Compliance Posture
+
+SecureAgents is designed to be **HIPAA and SOC 2 ready**. It uses AES-256 encryption at rest (KMS), TLS 1.2+ in transit, and maintains detailed audit logs in CloudWatch and DynamoDB PITR.
+
+---
+
+## API Reference
+
+### Base URL
+
+- **CloudFront URL:** `https://<distribution-id>.cloudfront.net` (Get this from `terraform output`)
+
+### 1. Request Upload Slot
+
+`POST /api/v1/request-upload`
+
+- **Header:** `x-api-key: <your-key>`
+- **Body:** `{"filename": "document.pdf"}`
+- **Success (202):**
+  ```json
+  {
+    "job_id": "uuid",
+    "upload_url": "s3-presigned-url",
+    "required_fields": {...},
+    "instructions": "..."
+  }
+  ```
+
+### 2. Check Job Status
+
+`GET /api/v1/jobs/{job_id}`
+
+- **Header:** `x-api-key: <your-key>`
+- **Success (200):**
+  ```json
+  {
+    "job_id": "uuid",
+    "status": "COMPLETED",
+    "created_at": "timestamp",
+    "result": "Three-sentence AI summary..."
+  }
+  ```
+
+### Error Codes
+
+- `401 Unauthorized`: Missing/Invalid API Key or bypassed CloudFront.
+- `404 Not Found`: Job ID does not exist or belongs to another client.
+- `429 Too Many Requests`: WAF or API Gateway rate limit exceeded.
+
+---
+
+## Testing Documentation
+
+### Local Development
+
+The apps use Pydantic for configuration. You can run them locally by pointing to real AWS resources (if you have local creds):
+
+```bash
+cd agent-api
+export S3_BUCKET_NAME=your-bucket
+export DYNAMODB_JOBS_TABLE=agents_Jobs
+uvicorn app.main:app --reload --port 8000
+```
+
+### Testing the Lambda Authorizer
+
+To test the authorizer without deploying, use the AWS Lambda console with a "Test Event" (JSON version 2.0):
+
+```json
+{
+  "headers": {
+    "x-api-key": "your-raw-key",
+    "x-origin-verify": "your-origin-secret"
+  }
+}
+```
+
+If successful, it should return `{"isAuthorized": true, "context": {"client_id": "..."}}`.
+
+### End-to-End Test (curl)
+
+```bash
+# 1. Request Upload
+curl -X POST https://<CF_URL>/api/v1/request-upload \
+     -H "x-api-key: ak_live_..." \
+     -H "Content-Type: application/json" \
+     -d '{"filename": "contract.pdf"}'
+
+# 2. Upload File (example using fields from step 1)
+curl -X POST <upload_url> \
+     -F "key=..." -F "x-amz-server-side-encryption=aws:kms" \
+     -F "file=@contract.pdf"
+
+# 3. Poll for Status
+curl -H "x-api-key: ak_live_..." https://<CF_URL>/api/v1/jobs/<job_id>
+```
+
+---
+
+## 💸 Cost Controls (Estimated Monthly)
 
 We optimized for a "Pay-as-you-Grow" model while maintaining enterprise-grade security.
 
 | Service                | Estimated Cost   | Logic                                                   |
 | :--------------------- | :--------------- | :------------------------------------------------------ |
+| **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.               |
 | **VPC Endpoints**      | ~$75 - $100      | S3, SQS, KMS, Bedrock, ECR. Replaces NAT Gateway costs. |
 | **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0). |
 | **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.           |
 | **Database & Storage** | ~$5              | S3, DynamoDB, SQS (pay-per-request/GB).                 |
 | **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Llama 3 is highly affordable). |
-| **Total Base**         | **~$125 - $165** | Production-grade security for less than $4/day.         |
+| **Total Base**         | **~$135 - $185** | Production-grade security for less than $5/day.         |
 
----
-
-## Getting Started
-
-### 1. Infrastructure Deployment
-
-Navigate to the terraform directory and deploy the stack:
-
-```bash
-cd terraform
-terraform init
-terraform apply
-```
-
-### 2. Prepare the API Key
-
-Generate a secure key for a client and store it in DynamoDB:
-
-```bash
-python scripts/client_key_script.py --client-id "LawFirm_A"
-```
-
-### 3. The Processing Workflow
-
-1.  **Request Access:** `POST /api/v1/request-upload` with your API Key.
-2.  **Upload:** Use the returned pre-signed URL to upload a PDF directly to S3.
-3.  **Automatic Trigger:** S3 notifies SQS -> SQS wakes up the Fargate Worker.
-4.  **AI Analysis:** The Worker extracts text, summarizes via Bedrock, and saves to DynamoDB.
-5.  **Check Result:** `GET /api/v1/jobs/{job_id}` to retrieve the final summary.
+- **Fargate Scaling:** Max capacity is capped at 5 workers in `scaling.tf` to prevent runaway costs during queue floods.
+- **Billing Alerts:** Configure a CloudWatch Billing Alarm for $200/month (the base cost of the stack).
+- **Per-Job Cost:** Using Llama 3 on Bedrock, the AI cost is ~$0.0001 per document, making the infrastructure base cost the primary driver.
 
 ---
 
