@@ -78,7 +78,7 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
                 {"x-amz-meta-job-id": job_id},
                 ["starts-with", "$Content-Type", "application/pdf"]
             ],
-            ExpiresIn=300
+            ExpiresIn=1800
         )
 
         return {
