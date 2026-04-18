@@ -76,7 +76,7 @@ variable "log_retention_days" {
   description = "How long to keep CloudWatch logs"
 }
 
-variable "origins" {
+variable "allowed_origins" {
   type        = string
   default     = "http://localhost:3000"
   description = "Allowed origins for CORS"

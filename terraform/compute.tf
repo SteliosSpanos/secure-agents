@@ -47,7 +47,8 @@ resource "aws_ecs_task_definition" "api_task" {
       environment = [
         { name = "AWS_REGION", value = var.region },
         { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name },
-        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.agents.id }
+        { name = "S3_BUCKET_NAME", value = aws_s3_bucket.agents.id },
+        { name = "ALLOWED_ORIGINS", value = var.allowed_origins }
       ]
 
       logConfiguration = {

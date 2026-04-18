@@ -1,7 +1,7 @@
 /*
     The SQS configuration that stores S3 event notifications for
     the agent worker to wake up.
-    Also the Dead Letter Queue
+    Also the Dead Letter Queue that messaged go after 3 failed tries.
 */
 
 // Dead Letter Queue
