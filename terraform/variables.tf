@@ -60,7 +60,7 @@ variable "sqs_dlq_retention_days" {
 
 variable "bedrock_model_id" {
   type        = string
-  default     = "meta.llama3-8b-instruct-v1:0"
+  default     = "eu.meta.llama3-8b-instruct-v1:0"
   description = "Bedrock foundation model ID"
 }
 

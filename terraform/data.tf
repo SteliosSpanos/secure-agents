@@ -127,7 +127,7 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
 
 // Shared KMS Policy
 
-data "aws_iam_policy_document" "kms_key_policy" {
+data "aws_iam_policy_document" "shared_kms_policy" {
   statement {
     sid    = "KeyAdministrator"
     effect = "Allow"
@@ -146,8 +146,7 @@ data "aws_iam_policy_document" "kms_key_policy" {
       type = "AWS"
       identifiers = [
         aws_iam_role.api_task_role.arn,
-        aws_iam_role.agent_task_role.arn,
-        aws_iam_role.authorizer_role.arn
+        aws_iam_role.agent_task_role.arn
       ]
     }
     actions = [
@@ -440,9 +439,13 @@ data "aws_iam_policy_document" "api_iam_policy" {
     effect = "Allow"
     actions = [
       "kms:Decrypt",
+      "kms:Encrypt",
       "kms:GenerateDataKey*"
     ]
-    resources = [aws_kms_key.agents.arn]
+    resources = [
+      aws_kms_key.jobs_table.arn,
+      aws_kms_alias.shared.arn
+    ]
   }
 
   statement {
@@ -501,7 +504,10 @@ data "aws_iam_policy_document" "agent_iam_policy" {
       "kms:Encrypt",
       "kms:GenerateDataKey*"
     ]
-    resources = [aws_kms_key.agents.arn]
+    resources = [
+      aws_kms_key.jobs_table.arn,
+      aws_kms_key.shared.arn
+    ]
   }
 }
 
@@ -581,7 +587,7 @@ data "aws_iam_policy_document" "authorizer_iam_policy" {
   statement {
     effect    = "Allow"
     actions   = ["kms:Decrypt"]
-    resources = [aws_kms_key.agents.arn]
+    resources = [aws_kms_key.api_keys_table.arn]
   }
 
   statement {

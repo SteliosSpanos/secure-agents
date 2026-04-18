@@ -10,7 +10,7 @@ resource "aws_ecr_repository" "api" {
 
   encryption_configuration {
     encryption_type = "KMS"
-    kms_key         = aws_kms_key.agents.arn
+    kms_key         = aws_kms_key.shared.arn
   }
 
   image_scanning_configuration {
@@ -54,7 +54,7 @@ resource "aws_ecr_repository" "worker" {
 
   encryption_configuration {
     encryption_type = "KMS"
-    kms_key         = aws_kms_key.agents.arn
+    kms_key         = aws_kms_key.shared.arn
   }
 
   image_scanning_configuration {
@@ -94,10 +94,8 @@ resource "null_resource" "api_bootstrap_image" {
     interpreter = ["bash", "-c"]
     command     = <<EOF
       aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com
-      echo "FROM scratch" > Dockerfile.dummy
-      docker build -t ${aws_ecr_repository.api.repository_url}:${var.image_tag} -f Dockerfile.dummy .
+      echo "FROM scratch" | docker build -t ${aws_ecr_repository.api.repository_url}:${var.image_tag} -
       docker push ${aws_ecr_repository.api.repository_url}:${var.image_tag}
-      rm Dockerfile.dummy
     EOF
   }
   depends_on = [aws_ecr_repository.api]
@@ -110,10 +108,8 @@ resource "null_resource" "worker_bootstrap_image" {
     interpreter = ["bash", "-c"]
     command     = <<EOF
       aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com
-      echo "FROM scratch" > Dockerfile.dummy
-      docker build -t ${aws_ecr_repository.worker.repository_url}:${var.image_tag} -f Dockerfile.dummy .
+      echo "FROM scratch" | docker build -t ${aws_ecr_repository.api.repository_url}:${var.image_tag} -
       docker push ${aws_ecr_repository.worker.repository_url}:${var.image_tag}
-      rm Dockerfile.dummy
     EOF
   }
   depends_on = [aws_ecr_repository.worker]

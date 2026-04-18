@@ -9,7 +9,7 @@
 resource "aws_sqs_queue" "agent_dlq" {
   name                              = "${var.project_name}-dlq"
   message_retention_seconds         = var.sqs_dlq_retention_days * 86400 # 14 days (max allowed)
-  kms_master_key_id                 = aws_kms_key.agents.arn
+  kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
 
   tags = {
@@ -27,7 +27,7 @@ resource "aws_sqs_queue" "agent_queue" {
   receive_wait_time_seconds  = 20  // Long polling (cost saving)
   visibility_timeout_seconds = 600 // to allow AI processing
 
-  kms_master_key_id                 = aws_kms_key.agents.arn
+  kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
 
   // Link to Dead Letter Queue

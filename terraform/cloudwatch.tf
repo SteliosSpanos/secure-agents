@@ -7,7 +7,7 @@
 resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
   name              = "/aws/vpc-flow-logs/${var.project_name}"
   retention_in_days = var.log_retention_days
-  kms_key_id        = aws_kms_key.agents.arn
+  kms_key_id        = aws_kms_key.shared.arn
 
   tags = {
     Name = "${var.project_name}-vpc-flow-logs"
@@ -31,7 +31,7 @@ resource "aws_flow_log" "agents_vpc_flow_log" {
 resource "aws_cloudwatch_log_group" "api_logs" {
   name              = "/aws/ecs/${var.project_name}-api"
   retention_in_days = var.log_retention_days
-  kms_key_id        = aws_kms_key.agents.arn
+  kms_key_id        = aws_kms_key.shared.arn
 
   tags = {
     Name = "${var.project_name}-api-logs"
@@ -43,7 +43,7 @@ resource "aws_cloudwatch_log_group" "api_logs" {
 resource "aws_cloudwatch_log_group" "worker_logs" {
   name              = "/aws/ecs/${var.project_name}-worker"
   retention_in_days = var.log_retention_days
-  kms_key_id        = aws_kms_key.agents.arn
+  kms_key_id        = aws_kms_key.shared.arn
 
   tags = {
     Name = "${var.project_name}-worker-logs"
@@ -55,7 +55,7 @@ resource "aws_cloudwatch_log_group" "worker_logs" {
 resource "aws_cloudwatch_log_group" "authorizer_logs" {
   name              = "/aws/lambda/${var.project_name}-authorizer"
   retention_in_days = var.log_retention_days
-  kms_key_id        = aws_kms_key.agents.arn
+  kms_key_id        = aws_kms_key.shared.arn
 
   tags = {
     Name = "${var.project_name}-authorizer-logs"
@@ -67,7 +67,7 @@ resource "aws_cloudwatch_log_group" "authorizer_logs" {
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   name              = "/aws/apigateway/${var.project_name}-logs"
   retention_in_days = var.log_retention_days
-  kms_key_id        = aws_kms_key.agents.arn
+  kms_key_id        = aws_kms_key.shared.arn
 
   tags = {
     Name = "${var.project_name}-apigw-logs"
@@ -78,7 +78,7 @@ resource "aws_cloudwatch_log_group" "api_gateway_logs" {
 
 resource "aws_sns_topic" "alerts" {
   name              = "${var.project_name}-alerts"
-  kms_master_key_id = aws_kms_key.agents.arn
+  kms_master_key_id = aws_kms_key.shared.arn
 }
 
 resource "aws_sns_topic_subscription" "dev_email" {
