@@ -14,6 +14,7 @@ graph TD
   classDef orange fill:#fff5e6,stroke:#ff9900,stroke-width:2px,color:#000;
   classDef purple fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px,color:#000;
   classDef blue fill:#e6f3ff,stroke:#0073bb,stroke-width:2px,color:#000;
+  classDef green fill:#e6ffed,stroke:#28a745,stroke-width:2px,color:#000;
 
   linkStyle default stroke:#000000,stroke-width:2px,fill:none;
 
@@ -23,93 +24,73 @@ graph TD
   class PublicInternet orange;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
-    WAF["AWS WAF<br>(Rate Limiting + Managed Rules)"]
-    CloudFront["CloudFront Distribution<br>(Global Edge)"]
+    WAF["AWS WAF<br>(Rate Limiting + Geo-Blocking)"]
+    CloudFront["CloudFront Distribution<br>(Edge Entry)"]
     APIGW[("AWS API Gateway<br>(HTTP API)")]
 
     subgraph AuthLayer["Identity & Auth"]
-      Authorizer["Lambda Authorizer<br>(X-Origin-Verify)"]
+      Authorizer["Lambda Authorizer<br>(HMAC + Origin Validation)"]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
     end
     class AuthLayer purple;
 
-    subgraph RegionalServices["Regional Services (AWS Managed)"]
-      MainQueue[("SQS:<br>agent-work-queue")]
-      DlqQueue[("SQS:<br>dlq")]
-      JobsTable[("DynamoDB:<br>agents_Jobs")]
-      StorageBucket[("S3:<br>secure-agents-storage")]
-      BedrockService[("Amazon Bedrock<br>(Llama 3)")]
-      KmsKey[("KMS Key:<br>(Customer Managed)")]
-      EcrRegistry[("ECR:<br>Container Images")]
+    subgraph RegionalServices["Regional Services (Encrypted)"]
+      MainQueue[("SQS:<br>Work Queue")]
+      DlqQueue[("SQS:<br>Dead Letter Queue")]
+      JobsTable[("DynamoDB:<br>Job Records")]
+      StorageBucket[("S3:<br>Document Storage")]
+      KmsKey[("KMS:<br>3-Tier Custom Keys")]
     end
     class RegionalServices purple;
 
-    subgraph VPC["VPC (Private Network)"]
-      VpcLinkENI["VPC Link<br>(ENI)"]
+    subgraph VPC["VPC (No Internet Access)"]
+      VpcLinkENI["VPC Link<br>(Private Ingress)"]
       InternalALB[("Internal ALB")]
 
-      subgraph VpcEndpoints["VPC Endpoints"]
+      subgraph VpcEndpoints["PrivateLink Gateways"]
         EndpointSQS["SQS"]
         EndpointDynamoDB["DynamoDB"]
-        EndpointS3["S3"]
+        EndpointS3["S3 (Gateway)"]
         EndpointKMS["KMS"]
-        EndpointSTS["STS"]
-        EndpointECR["ECR"]
         EndpointBedrock["Bedrock"]
       end
       class VpcEndpoints blue;
 
-      subgraph PrivateSubnets["Private Subnets (Multi-AZ)"]
-        SgApi(("SG:<br>Fargate API"))
-        SgWorker(("SG:<br>Fargate Worker"))
-
-        ApiService[["ECS Fargate:<br>FastAPI App"]]
-        WorkerService[["ECS Fargate:<br>AI Agent Worker"]]
+      subgraph PrivateSubnets["Compute (Multi-AZ)"]
+        ApiService[["ECS Fargate:<br>FastAPI API"]]
+        WorkerService[["ECS Fargate:<br>AI Worker"]]
       end
       class PrivateSubnets blue;
     end
-    class VPC purple;
+
+    subgraph BedrockNetwork["AWS Private AI Backbone"]
+        BedrockInference["Bedrock Runtime<br>(eu.meta.llama3)"]
+    end
+    class BedrockNetwork green;
+
   end
-  class AWSCloud orange;
 
-  Client -- "1. Secure Request" --> WAF
+  Client -- "1. API Key + PDF Request" --> WAF
   WAF --> CloudFront
-  CloudFront -- "2. Forward + X-Origin-Verify" --> APIGW
-  APIGW -- "3. Validate Edge + API Key" --> Authorizer
-  Authorizer -- "4. Query Hash" --> ApiKeysTable
-  Authorizer -- "5. Return context" --> APIGW
+  CloudFront -- "2. Inject X-Origin-Verify" --> APIGW
+  APIGW -- "3. Authorize Request" --> Authorizer
+  Authorizer -- "4. Verify Origin Secret" --> APIGW
 
-  APIGW -- "6. Forward (VPC Link)" --> VpcLinkENI
-  VpcLinkENI -- "7. Forward (port 80)" --> InternalALB
-  InternalALB -- "8. Traffic (port 8000)" --> SgApi
-  SgApi --> ApiService
+  APIGW -- "5. Forward (VPC Link)" --> VpcLinkENI
+  VpcLinkENI --> InternalALB
+  InternalALB --> ApiService
 
-  ApiService -- "9. Generate Presigned URL" --> Client
-  ApiService -- "10. Init Job Record" --> EndpointDynamoDB
+  ApiService -- "6. Return Presigned URL" --> Client
+  ApiService -- "7. Set PENDING_UPLOAD" --> EndpointDynamoDB
 
-  Client -- "11. Upload PDF (Presigned)" --> StorageBucket
-  StorageBucket -- "12. S3 Event Notification" --> MainQueue
+  Client -- "8. Encrypted Upload" --> StorageBucket
+  StorageBucket -- "9. ObjectCreated Event" --> MainQueue
 
-  MainQueue -- "13. Dead Letter (On Fail)" --> DlqQueue
-
-  SgWorker --> WorkerService
-  WorkerService -- "14. Long Poll Message" --> EndpointSQS
-  WorkerService -- "15. Get Job Status" --> EndpointDynamoDB
-  WorkerService -- "16. Download PDF" --> EndpointS3
-  WorkerService -- "17. Decrypt Data" --> EndpointKMS
-  WorkerService -- "18. Invoke Model" --> EndpointBedrock
-
-  WorkerService -- "19. Write Final Result" --> EndpointDynamoDB
-
-  EndpointDynamoDB -. "Route" .-> JobsTable
-  EndpointSQS -. "Route" .-> MainQueue
-  EndpointS3 -. "Route" .-> StorageBucket
-  EndpointKMS -. "Route" .-> KmsKey
-  EndpointBedrock -. "Route" .-> BedrockService
-
-  EcrRegistry --> EndpointECR
-  EndpointECR -. "Pull Image" .-> ApiService
-  EndpointECR -. "Pull Image" .-> WorkerService
+  WorkerService -- "10. Long Poll" --> EndpointSQS
+  WorkerService -- "11. Decrypt & Download" --> EndpointS3
+  WorkerService -- "12. Private Inference" --> EndpointBedrock
+  EndpointBedrock -. "Cross-Region" .-> BedrockInference
+  WorkerService -- "13. Final Result" --> EndpointDynamoDB
 ```
 
 ### Key Architectural Decisions (ADRs)
