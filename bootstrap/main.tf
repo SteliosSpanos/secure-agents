@@ -1,8 +1,58 @@
-/*
-    Configuration of remote backend for terraform state (S3 bucket nand DynamoDB table).
-*/
+data "aws_caller_identity" "current" {}
 
-// S3 Bucket
+// Backend KMS Key
+
+data "aws_iam_policy_document" "terraform_backend_kms_policy" {
+  statement {
+    sid    = "KeyAdministrator"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+}
+
+resource "aws_kms_key" "terraform_backend" {
+  description             = "KMS Key used to encrypt the Terraform Remote State bucket"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.terraform_backend_kms_policy.json
+
+  tags = {
+    Name = "${var.project_name}-terraform-backend-kms-key"
+  }
+}
+
+resource "aws_kms_alias" "terraform_backend" {
+  name          = "alias/${var.project_name}-terraform-backend"
+  target_key_id = aws_kms_key.terraform_backend.key_id
+}
+
+// State S3 Bucket
+
+data "aws_iam_policy_document" "state_force_ssl" {
+  statement {
+    sid    = "DenyNonSSLTransport"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.terraform_state.arn,
+      "${aws_s3_bucket.terraform_state.arn}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
 
 resource "aws_s3_bucket" "terraform_state" {
   bucket        = "${var.project_name}-terraform-state-${data.aws_caller_identity.current.account_id}"
@@ -30,7 +80,7 @@ resource "aws_s3_bucket_server_side_encryption_configuration" "terraform_state" 
 
   rule {
     apply_server_side_encryption_by_default {
-      kms_master_key_id = aws_kms_key.agents.arn
+      kms_master_key_id = aws_kms_key.terraform_backend.arn
       sse_algorithm     = "aws:kms"
     }
     bucket_key_enabled = true
@@ -66,7 +116,7 @@ resource "aws_s3_bucket_policy" "terraform_state" {
   policy = data.aws_iam_policy_document.state_force_ssl.json
 }
 
-// DynamoDB Table
+// DynamoDB Locks Table
 
 resource "aws_dynamodb_table" "terraform_locks" {
   name         = "${var.project_name}-terraform-locks"
@@ -76,6 +126,10 @@ resource "aws_dynamodb_table" "terraform_locks" {
   attribute {
     name = "LockID"
     type = "S"
+  }
+
+  server_side_encryption {
+    enabled = true
   }
 
   tags = {
