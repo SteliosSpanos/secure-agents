@@ -147,31 +147,60 @@ The user/role deploying the stack needs a policy covering:
 
 - `AdministratorAccess` (recommended for initial setup) OR fine-grained permissions for: EC2 (VPC/SGs), ECS, ECR, S3, DynamoDB, SQS, KMS, Bedrock, IAM, CloudFront, WAF, and Lambda.
 
-### Terraform Backend Bootstrap
+## Deployment
 
-1.  Navigate to `terraform/`.
-2.  Ensure `backend.tf` is configured but the `terraform` block in `providers.tf` is commented out.
-3.  Run `terraform init` and `terraform apply` (this creates the state bucket and lock table).
-4.  Uncomment the `backend` block in `providers.tf`, update the bucket name/account ID, and run `terraform init -migrate-state`.
+This project uses a highly secure, isolated remote state. Deployment is a two-phase process:
 
-### The "Chicken-and-Egg" Image Problem
+**Phase 1: Bootstrap the Control Plane**
 
-The ECS services require an image to exist in ECR before they can start. The Terraform code uses a `null_resource` to push a dummy "scratch" image to ECR during initial creation. This allows Terraform to complete, but **the API/Worker will fail until you push real images.**
+1. Navigate to the `bootstrap/` directory.
+2. Run `terraform init` and `terraform apply`.
+3. When complete, Terraform will output values for the main stack `backend` code block in terraform/providers.tf.
+4. Copy that block and paste it into your main `terraform/providers.tf` file.
 
-```bash
-# Push real API image
-aws ecr get-login-password --region eu-central-1 | docker login --username AWS --password-stdin <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com
-docker build -t <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-api:latest ./agent-api
-docker push <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-api:latest
+**Phase 2: Deploy the Application**
 
-# Push real Worker image
-docker build -t <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-worker:latest ./agent-worker
-docker push <ACCOUNT_ID>.dkr.ecr.eu-central-1.amazonaws.com/agents-worker:latest
+1. Navigate to the `terraform/` directory.
+2. Run `terraform init` (this connects to your newly created secure S3 state).
+3. Run `terraform apply` to deploy the main infrastructure.
 
-# Trigger ECS redeploy
-aws ecs update-service --cluster agents-cluster --service agents-api-service --force-new-deployment
-aws ecs update-service --cluster agents-cluster --service agents-worker-service --force-new-deployment
+### First-Run Expectations (The ECR Hack)
+
+> ** Note on Initial Deployment:**
+> To allow Terraform to deploy ECS and ECR in a single click, the initial `terraform apply` pushes a 0-byte "dummy" image to the registries.
+>
+> Immediately after your first deployment, your ECS tasks will briefly enter a "CrashLoopBackOff" state. **This is expected and completely fine.** Once your GitHub Actions CI/CD pipeline runs and pushes the real Python application code, ECS will automatically recover and spin up healthy containers.
+
+---
+
+## AI Model Access (Amazon Bedrock)
+
+This architecture utilizes Meta Llama 3 via Amazon Bedrock. Because AWS now automatically enables serverless foundation models on the first invocation, **no manual console configuration is required**.
+
+_(Note: We utilize the `eu.` Cross-Region Inference prefix in Terraform to guarantee high availability and bypass regional hardware limitations in Frankfurt)._
+
+---
+
+## Environment Configuration (CORS)
+
+By default, the API restricts Cross-Origin Resource Sharing (CORS) to `http://localhost:3000` for local testing.
+
+Before deploying to production, you **must** pass your frontend's domain to Terraform to prevent the API from rejecting your web traffic. Create a `terraform.tfvars` file in the `terraform/` directory:
+
+```hcl
+# terraform/terraform.tfvars
+allowed_origins = "https://your-production-frontend.com,http://localhost:3000"
 ```
+
+---
+
+## API Integration Flow
+
+This API uses an asynchronous, Zero-Trust upload architecture. Clients do not send files directly through the API Gateway.
+
+1. **Request a Slot:** `POST /api/v1/request-upload`. The API returns a secure, presigned S3 URL (valid for 30 minutes) and registers the job as `PENDING_UPLOAD`.
+2. **Direct Upload:** The client securely uploads the PDF directly to the S3 URL using the provided cryptographic headers.
+3. **Poll Status:** The client polls `GET /api/v1/jobs/{job_id}`. Once S3 finishes receiving the file, it automatically triggers the AI worker, moving the state to `PROCESSING` and eventually `COMPLETED`.
 
 ---
 
