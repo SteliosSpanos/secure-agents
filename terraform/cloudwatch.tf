@@ -104,3 +104,23 @@ resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
 
   alarm_actions = [aws_sns_topic.alerts.arn]
 }
+
+resource "aws_cloudwatch_metric_alarm" "worker_at_max_capacity" {
+  alarm_name          = "${var.project_name}-worker-at-max-capacity"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 2
+  metric_name         = "RunningTaskCount"
+  namespace           = "AWS/ContainerInsights"
+  period              = 60
+  statistic           = "Average"
+  threshold           = local.worker_max_capacity
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "Queue may be backing up faster than workers can drain it"
+
+  dimensions = {
+    ClusterName = aws_ecs_cluster.agents_cluster.name
+    ServiceName = aws_ecs_service.worker_service.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
