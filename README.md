@@ -10,11 +10,10 @@ SecureAgents was built with a "Security First, Cloud Second" mindset. We use a d
 
 ```mermaid
 graph TD
-  %% Define Styles
+  %% Define Styles (Reverted to Old Coloring Scheme)
   classDef orange fill:#fff5e6,stroke:#ff9900,stroke-width:2px,color:#000;
   classDef purple fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px,color:#000;
   classDef blue fill:#e6f3ff,stroke:#0073bb,stroke-width:2px,color:#000;
-  classDef green fill:#e6ffed,stroke:#28a745,stroke-width:2px,color:#000;
 
   linkStyle default stroke:#000000,stroke-width:2px,fill:none;
 
@@ -31,6 +30,7 @@ graph TD
     subgraph AuthLayer["Identity & Auth"]
       Authorizer["Lambda Authorizer<br>(HMAC + Origin Validation)"]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
+      KmsAuth[("KMS Key:<br>Auth")]
     end
     class AuthLayer purple;
 
@@ -39,7 +39,9 @@ graph TD
       DlqQueue[("SQS:<br>Dead Letter Queue")]
       JobsTable[("DynamoDB:<br>Job Records")]
       StorageBucket[("S3:<br>Document Storage")]
-      KmsKey[("KMS:<br>3-Tier Custom Keys")]
+      KmsShared[("KMS Key:<br>Shared")]
+      KmsJobs[("KMS Key:<br>Jobs Table")]
+      BedrockInference["Bedrock Runtime<br>(eu.meta.llama3)"]
     end
     class RegionalServices purple;
 
@@ -62,35 +64,43 @@ graph TD
       end
       class PrivateSubnets blue;
     end
-
-    subgraph BedrockNetwork["AWS Private AI Backbone"]
-        BedrockInference["Bedrock Runtime<br>(eu.meta.llama3)"]
-    end
-    class BedrockNetwork green;
-
+    class VPC purple;
   end
+  class AWSCloud orange;
 
   Client -- "1. API Key + PDF Request" --> WAF
   WAF --> CloudFront
   CloudFront -- "2. Inject X-Origin-Verify" --> APIGW
   APIGW -- "3. Authorize Request" --> Authorizer
-  Authorizer -- "4. Verify Origin Secret" --> APIGW
+  Authorizer -- "4. Decrypt Key Hash" --> EndpointKMS
+  Authorizer -- "5. Validate Key" --> ApiKeysTable
+  Authorizer -- "6. Verify Origin Secret" --> APIGW
 
-  APIGW -- "5. Forward (VPC Link)" --> VpcLinkENI
+  APIGW -- "7. Forward (VPC Link)" --> VpcLinkENI
   VpcLinkENI --> InternalALB
   InternalALB --> ApiService
 
-  ApiService -- "6. Return Presigned URL" --> Client
-  ApiService -- "7. Set PENDING_UPLOAD" --> EndpointDynamoDB
+  ApiService -- "8. Return Presigned URL" --> Client
+  ApiService -- "9. Set PENDING_UPLOAD" --> EndpointDynamoDB
 
-  Client -- "8. Encrypted Upload" --> StorageBucket
-  StorageBucket -- "9. ObjectCreated Event" --> MainQueue
+  Client -- "10. Encrypted Upload" --> StorageBucket
+  StorageBucket -- "11. ObjectCreated Event" --> MainQueue
 
-  WorkerService -- "10. Long Poll" --> EndpointSQS
-  WorkerService -- "11. Decrypt & Download" --> EndpointS3
-  WorkerService -- "12. Private Inference" --> EndpointBedrock
-  EndpointBedrock -. "Cross-Region" .-> BedrockInference
-  WorkerService -- "13. Final Result" --> EndpointDynamoDB
+  MainQueue -- "DLQ Redrive" --> DlqQueue
+
+  WorkerService -- "12. Long Poll" --> EndpointSQS
+  WorkerService -- "13. Decrypt & Download" --> EndpointS3
+  WorkerService -- "14. Private Inference" --> EndpointBedrock
+  WorkerService -- "15. Final Result" --> EndpointDynamoDB
+
+  %% Logical Routing via Endpoints
+  EndpointDynamoDB -. "Route" .-> JobsTable
+  EndpointSQS -. "Route" .-> MainQueue
+  EndpointS3 -. "Route" .-> StorageBucket
+  EndpointKMS -. "Route" .-> KmsShared
+  EndpointKMS -. "Route" .-> KmsJobs
+  EndpointKMS -. "Route" .-> KmsAuth
+  EndpointBedrock -. "Dynamic Routing" .-> BedrockInference
 ```
 
 ### Key Architectural Decisions (ADRs)
