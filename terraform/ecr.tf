@@ -93,9 +93,9 @@ resource "null_resource" "api_bootstrap_image" {
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     command     = <<EOF
-      aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com
-      echo "FROM scratch" | docker build -t ${aws_ecr_repository.api.repository_url}:${var.image_tag} -
-      docker push ${aws_ecr_repository.api.repository_url}:${var.image_tag}
+      aws ecr get-login-password --region ${var.region} --profile ${var.profile} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com
+      echo "FROM alpine" | docker build -t ${aws_ecr_repository.api.repository_url}:latest -
+      docker push ${aws_ecr_repository.api.repository_url}:latest
     EOF
   }
   depends_on = [aws_ecr_repository.api]
@@ -107,9 +107,9 @@ resource "null_resource" "worker_bootstrap_image" {
   provisioner "local-exec" {
     interpreter = ["bash", "-c"]
     command     = <<EOF
-      aws ecr get-login-password --region ${var.region} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com
-      echo "FROM scratch" | docker build -t ${aws_ecr_repository.api.repository_url}:${var.image_tag} -
-      docker push ${aws_ecr_repository.worker.repository_url}:${var.image_tag}
+      aws ecr get-login-password --region ${var.region} --profile ${var.profile} | docker login --username AWS --password-stdin ${data.aws_caller_identity.current.account_id}.dkr.ecr.${var.region}.amazonaws.com
+      echo "FROM alpine" | docker build -t ${aws_ecr_repository.worker.repository_url}:latest -
+      docker push ${aws_ecr_repository.worker.repository_url}:latest
     EOF
   }
   depends_on = [aws_ecr_repository.worker]
