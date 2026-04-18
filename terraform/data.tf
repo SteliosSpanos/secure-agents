@@ -12,29 +12,6 @@ data "aws_prefix_list" "dynamodb" {
   prefix_list_id = aws_vpc_endpoint.dynamodb.prefix_list_id
 }
 
-// S3 Bucket Policy (Remote Backend)
-
-data "aws_iam_policy_document" "state_force_ssl" {
-  statement {
-    sid    = "DenyNonSSLTransport"
-    effect = "Deny"
-    principals {
-      type        = "*"
-      identifiers = ["*"]
-    }
-    actions = ["s3:*"]
-    resources = [
-      aws_s3_bucket.terraform_state.arn,
-      "${aws_s3_bucket.terraform_state.arn}/*"
-    ]
-    condition {
-      test     = "Bool"
-      variable = "aws:SecureTransport"
-      values   = ["false"]
-    }
-  }
-}
-
 // S3 Bucket Policy (Main Bucket)
 
 data "aws_iam_policy_document" "s3_bucket_policy" {
