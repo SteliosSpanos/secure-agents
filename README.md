@@ -19,7 +19,27 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 
 ---
 
-## The Architecture: Why We Made These Decisions
+## Zero-Trust Security & Isolation Architecture
+
+SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillars of our isolation strategy:
+
+### 1. Zero-Egress VPC Design
+- **No Internet Gateway:** The VPC contains no Internet Gateway (IGW). All compute resources (ECS Fargate) live in strictly private subnets.
+- **VPC Endpoints (PrivateLink):** Communication with AWS services (S3, DynamoDB, SQS, KMS, Bedrock) occurs entirely over the AWS private network backbone. Data never traverses the public internet.
+- **Security Group Hardening:** Egress is restricted to only the necessary VPC Endpoints via Prefix Lists, preventing data exfiltration even if a container is compromised.
+
+### 2. The "Double-Shield" Ingress
+- **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Geo-Blocking) and CloudFront.
+- **Origin Validation:** API Gateway is configured with a Lambda Authorizer that requires a secret `X-Origin-Verify` header, ensuring traffic *must* come from CloudFront and cannot bypass the WAF.
+- **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link. This means the ALB has no public DNS or IP address.
+
+### 3. Cryptographic Data Privacy
+- **KMS Managed Keys:** Every service (S3, DynamoDB, SQS, ECR, CloudWatch) uses Customer Managed Keys (CMKs) for AES-256 encryption.
+- **Transient Storage:** Documents in S3 are automatically purged after 30 days via lifecycle policies.
+- **Private Inference:** Bedrock cross-region inference is utilized via VPC Endpoints, ensuring that document content is processed within the AWS perimeter and never used for model training.
+
+---
+
 
 SecureAgents was built with a "Security First, Cloud Second" mindset. We use a defense-in-depth strategy that starts at the edge and goes deep into the VPC.
 
