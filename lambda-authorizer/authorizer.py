@@ -22,7 +22,7 @@ aws_config = Config(
         "mode": "standard"
     },
     connect_timeout=2,
-    read_timeout=5 # Don't hang API Gateway waiting for a slow DB
+    read_timeout=10 # Don't hang API Gateway waiting for a slow DB
 )
 
 
@@ -58,11 +58,20 @@ def lambda_handler(event, context):
     hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
     try:
-        response = api_keys_table.get_item(Key={"api_key": hashed_key})
+        response = api_keys_table.get_item(
+            Key={"api_key": hashed_key},
+            ConsistentRead=True
+        )
         item = response.get("Item")
 
-        if item and item.get("active", True):
-            client_id = item.get("client_id")
+        if not item:
+            logger.warning(f"Access denied: Key hash {hashed_key[:8]}...")
+            return {"isAuthorized": False}
+
+        is_active = item.get("active", False)
+
+        if is_active:
+            client_id = item.get("client_id", "unkown_client")
             logger.info(f"Authorized client: {client_id}.")
 
             return {
