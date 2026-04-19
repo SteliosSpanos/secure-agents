@@ -93,6 +93,8 @@ resource "aws_lambda_function" "authorizer" {
   role             = aws_iam_role.authorizer_role.arn
   handler          = "authorizer.lambda_handler"
   runtime          = "python3.11"
+  timeout          = 15
+  memory_size      = 256
 
   depends_on = [aws_cloudwatch_log_group.authorizer_logs]
 

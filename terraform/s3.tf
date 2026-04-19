@@ -22,7 +22,13 @@ resource "aws_s3_bucket_cors_configuration" "agents" {
   bucket = aws_s3_bucket.agents.id
 
   cors_rule {
-    allowed_headers = ["*"]
+    allowed_headers = [
+      "Content-Type",
+      "x-amz-server-side-encryption",
+      "x-amz-server-side-encryption-aws-kms-key-id",
+      "x-amz-meta-client-id",
+      "x-amz-meta-job-id"
+    ]
     allowed_methods = ["POST"]
     allowed_origins = [var.allowed_origins]
     expose_headers  = ["ETag"]
