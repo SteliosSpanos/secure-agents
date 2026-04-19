@@ -191,7 +191,8 @@ def main():
                         key = record["s3"]["object"]["key"]
 
                         # Extract Client ID and Job ID: client_id/uploads/job_id/filename.pdf 
-                        parts = key.split('/')
+                        decoded_key = unquote_plus(key)
+                        parts = decoded_key.split('/')
                         if len(parts) >= 3:
                             client_id = parts[0]
                             job_id = parts[2]
