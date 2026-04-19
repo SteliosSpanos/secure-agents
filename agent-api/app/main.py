@@ -31,7 +31,7 @@ app.add_middleware(
     allow_origins=[origin.strip() for origin in settings.allowed_origins.split(',')],
     allow_credentials=True,
     allow_methods=["GET", "POST"],
-    allow_headers=["*"]
+    allow_headers=["Content-Type", "x-api-key"]
 )
 
 

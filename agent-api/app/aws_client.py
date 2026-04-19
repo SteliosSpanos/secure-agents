@@ -67,6 +67,7 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
             Key=object_key,
             Fields={
                 "x-amz-server-side-encryption": "aws:kms",
+                "x-amz-server-side-encryption-aws-kms-key-id": settings.kms_key_arn,
                 "x-amz-meta-client-id": client_id,
                 "x-amz-meta-job-id": job_id,
                 "Content-Type": "application/pdf"
@@ -74,6 +75,7 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
             Conditions=[
                 ["content-length-range", 1, settings.max_file_size_mb * 1024 * 1024],
                 {"x-amz-server-side-encryption": "aws:kms"},
+                {"x-amz-server-side-encryption-aws-kms-key-id": settings.kms_key_arn},
                 {"x-amz-meta-client-id": client_id},
                 {"x-amz-meta-job-id": job_id},
                 ["starts-with", "$Content-Type", "application/pdf"]
@@ -128,7 +130,8 @@ def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
             "s3_path": s3_path,
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expiration
-        }
+        },
+        ConditionExpression="attribute_not_exists(client_id)"
        )
     except (ClientError, BotoCoreError) as e:
         logger.exception("Job logging failed.")

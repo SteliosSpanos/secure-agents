@@ -27,6 +27,11 @@ class Settings(BaseSettings):
         validation_alias="ALLOWED_ORIGINS"
     )
 
+    kms_key_arn: str = Field(
+        default="",
+        validation_alias="KMS_KEY_ARN"
+    )
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
