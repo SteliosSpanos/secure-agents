@@ -76,7 +76,9 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     try:
         head = s3.head_object(Bucket=bucket, Key=decoded_key)
         content_length = head.get("ContentLength", 0)
-        if content_length > settings.max_file_size_mb:
+
+        max_bytes = settings.max_file_size_mb * 1024 * 1024
+        if content_length > max_bytes:
             raise ValueError("PDF exceeds maximum allowed size")
     except(ClientError, BotoCoreError):
         logger.exception(f"Couldn't HEAD object s3://{bucket}/{decoded_key}.")
@@ -118,7 +120,7 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
 
 def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, bool]:
     """Extracts text and asks Bedrock to summarize it"""
-    extend_sqs_visibilty(receipt_handle)
+    extend_sqs_visibility(receipt_handle)
 
     document_text = extract_text_from_s3_pdf(bucket, key)
 
@@ -130,7 +132,7 @@ def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, b
         logger.warning(f"Document {key} exceeds limit. Truncating to {settings.char_limit} chars.")
         document_text = document_text[:settings.char_limit]
 
-    extend_sqs_visibilty(receipt_handle)
+    extend_sqs_visibility(receipt_handle)
 
     logger.info("Text extracted. Invoking Bedrock Llama 3...")
 
@@ -243,7 +245,7 @@ def main():
                         bucket = record["s3"]["bucket"]["name"]
                         key = record["s3"]["object"]["key"]
 
-                        # Extract Client ID and Job ID: client_id/uploads/job_id/filename.pdf 
+                        # Extract Client ID and Job ID: {client_id}/uploads/{job_id}/{filename}.pdf 
                         decoded_key = unquote_plus(key)
                         parts = decoded_key.split('/')
                         if len(parts) >= 3:
@@ -264,9 +266,15 @@ def main():
                             logger.info(f"Job {job_id} lock denied (already processing/completed).")
                             continue
 
+
                         try:
-                            summary = process_document(bucket, key)
-                            update_job(client_id, job_id, "COMPLETED", result_summary=summary)
+                            summary, is_truncated = process_document(bucket, key, receipt_handle)
+
+                            final_summary = summary
+                            if is_truncated:
+                                final_summary = f"[Note: document was truncated to {settings.char_limit} characters]" + summary
+
+                            update_job(client_id, job_id, "COMPLETED", result_summary=final_summary)
                             logger.info(f"Job {job_id} successfully completed for client {client_id}.")
                         except (ClientError, BotoCoreError):
                             logger.exception(f"Retryable AWS error for job {job_id}.")
