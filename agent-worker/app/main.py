@@ -8,6 +8,7 @@ from urllib.parse import unquote_plus
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 from pypdf import PdfReader
+from pypdf.errors import PdfReadError
 
 from .config import settings
 
@@ -26,7 +27,7 @@ aws_config = Config(
         "mode": "standard"
     },
     connect_timeout=5,
-    read_timeout=60 # Must be > SQS WaitTimeSeconds and accommodate Bedrock
+    read_timeout=300 # Must be > SQS WaitTimeSeconds and accommodate Bedrock
 )
 
 
@@ -52,37 +53,84 @@ signal.signal(signal.SIGINT, handle_sigterm)
 
 
 
-# Business Logic
+def extend_sqs_visibility(receipt_handle: str, timeout: int = 600):
+    """Extends the SQS visibility timeout to prevent other workers from taking this job"""
+    try:
+        sqs.change_message_visibility(
+            QueueUrl=settings.sqs_queue_url,
+            ReceiptHandle=receipt_handle,
+            VisibilityTimeout=timeout
+        )
+        logger.info(f"Extended visibility by {timeout}s.")
+    except (ClientError, BotoCoreError):
+        logger.warning("Job may become visible to other workers if processing is slow.")
+    except Exception:
+        logger.exception("Unexpected heartbeat failure.")
+
 
 def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     """Downloads PDF from S3 into memory and extracts text"""
     decoded_key = unquote_plus(key)
+
+    # Check object size before committing to a full download 
+    try:
+        head = s3.head_object(Bucket=bucket, Key=decoded_key)
+        content_length = head.get("ContentLength", 0)
+        if content_length > settings.max_file_size_mb:
+            raise ValueError("PDF exceeds maximum allowed size")
+    except(ClientError, BotoCoreError):
+        logger.exception(f"Couldn't HEAD object s3://{bucket}/{decoded_key}.")
+        raise
 
     logger.info(f"Downloading s3://{bucket}/{decoded_key}")
     response = s3.get_object(Bucket=bucket, Key=decoded_key)
     pdf_bytes = response["Body"].read()
 
     pdf_file = io.BytesIO(pdf_bytes)
-    reader = PdfReader(pdf_file)
 
-    text = ""
-    for page in reader.pages:
-        extracted = page.extract_text()
-        if extracted:
-            text += extracted + "\n"
+    try:
+        reader = PdfReader(pdf_file)
 
-    return text.strip()
+        if reader.is_encrypted:
+            logger.warning(f"File {decoded_key} is encrypted.")
+            raise ValueError("PDF is password protected or encrypted.")
+
+        num_pages = len(reader.pages)
+        if num_pages == 0:
+            raise ValueError("PDF is empty or contains no readable pages.")
+
+        text = ""
+        for page in reader.pages:
+            extracted = page.extract_text()
+            if extracted:
+                text += extracted + "\n"
+
+        return text.strip()
+    except PdfReadError:
+        logger.exception(f"PdfReadError for {decoded_key}.")
+        raise ValueError("PDF structure is corrupted")
+    except Exception:
+        logger.exception(f"Unexpected pasring error for {decoded_key}.")
+        raise ValueError("Could not parse PDF")
 
 
 
-def process_document(bucket: str, key: str) -> str:
+
+def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, bool]:
     """Extracts text and asks Bedrock to summarize it"""
+    extend_sqs_visibilty(receipt_handle)
+
     document_text = extract_text_from_s3_pdf(bucket, key)
 
     if not document_text:
         raise ValueError("PDF contained no readable text.")
 
-    document_text = document_text[:15000]
+    is_truncated = len(document_text) > settings.char_limit
+    if is_truncated:
+        logger.warning(f"Document {key} exceeds limit. Truncating to {settings.char_limit} chars.")
+        document_text = document_text[:settings.char_limit]
+
+    extend_sqs_visibilty(receipt_handle)
 
     logger.info("Text extracted. Invoking Bedrock Llama 3...")
 
@@ -122,8 +170,8 @@ def process_document(bucket: str, key: str) -> str:
         }
     )
 
-    summary = response["output"]["message"]["content"][0]["text"]
-    return summary.strip()
+    summary = response["output"]["message"]["content"][0]["text"].strip()
+    return summary, is_truncated
 
 
 def update_job(client_id: str, job_id: str, status_val: str, result_summary: str | None = None, expected_status: str | None = None) -> bool:
@@ -160,7 +208,12 @@ def update_job(client_id: str, job_id: str, status_val: str, result_summary: str
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             return False
         raise
-
+    except BotoCoreError:
+        logger.exception(f"AWS SDK Transport Error for job {job_id}.")
+        raise
+    except Exception:
+        logger.exception(f"Unexpected system error during DynamoDB update for job {job_id}.")
+        raise
 
 
 def main():
@@ -219,9 +272,9 @@ def main():
                             logger.exception(f"Retryable AWS error for job {job_id}.")
                             update_job(client_id, job_id, "PENDING_UPLOAD")
                             raise
-                        except Exception as e:
+                        except Exception:
                             logger.exception(f"Fatal error for job {job_id}.")
-                            update_job(client_id, job_id, "FAILED", result_summary=str(e))
+                            update_job(client_id, job_id, "FAILED", result_summary="Document processing failed")
 
                     sqs.delete_message(
                         QueueUrl=settings.sqs_queue_url,

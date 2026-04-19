@@ -22,6 +22,16 @@ class Settings(BaseSettings):
         validation_alias="DYNAMODB_JOBS_TABLE"
     )
 
+    max_file_size_mb: int = Field(
+        default=50,
+        validation_alias="MAX_FILE_SIZE_MB"
+    )
+
+    char_limit: int = Field(
+        default=15000,
+        validation_alias="CHAR_LIMIT"
+    )
+
     model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
 
