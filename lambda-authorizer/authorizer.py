@@ -71,7 +71,7 @@ def lambda_handler(event, context):
         is_active = item.get("active", False)
 
         if is_active:
-            client_id = item.get("client_id", "unkown_client")
+            client_id = item.get("client_id", "unknown_client")
             logger.info(f"Authorized client: {client_id}.")
 
             return {
@@ -84,7 +84,7 @@ def lambda_handler(event, context):
         logger.warning(f"Invalid or inactive API key: {hashed_key[:8]}...")
         return {"isAuthorized": False}
     except (ClientError, BotoCoreError):
-        logger.exception("AWS Infrastructure error occured during authorization.")
+        logger.exception("AWS Infrastructure error occurred during authorization.")
         return {"isAuthorized": False}
     except Exception:
         logger.exception("Unexpected internal Python error.")
