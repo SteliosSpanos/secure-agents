@@ -30,22 +30,21 @@ SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillar
 
 ### 2. The "Double-Shield" Ingress
 - **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Geo-Blocking) and CloudFront.
-- **Origin Validation:** API Gateway is configured with a Lambda Authorizer that requires a secret `X-Origin-Verify` header, ensuring traffic *must* come from CloudFront and cannot bypass the WAF.
+- **Enhanced Audit Trail:** CloudFront is configured to forward the `X-Forwarded-For` header, and API Gateway access logs are enriched to capture the real client IP for security forensic analysis.
+- **Native Header Validation:** API Gateway performs native `identity_source` checks for both the API Key and the `X-Origin-Verify` secret, rejecting unauthorized direct traffic before it even invokes the Lambda Authorizer.
 - **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link. This means the ALB has no public DNS or IP address.
 
-### 3. Cryptographic Data Privacy
+### 3. Application Resilience & Security
+- **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM. This prevents Out-Of-Memory (OOM) attacks and ensures stability when processing complex or malicious "zip-bomb" documents.
 - **KMS Managed Keys:** Every service (S3, DynamoDB, SQS, ECR, CloudWatch) uses Customer Managed Keys (CMKs) for AES-256 encryption.
-- **Transient Storage:** Documents in S3 are automatically purged after 30 days via lifecycle policies.
-- **Private Inference:** Bedrock cross-region inference is utilized via VPC Endpoints, ensuring that document content is processed within the AWS perimeter and never used for model training.
 
 ---
-
 
 SecureAgents was built with a "Security First, Cloud Second" mindset. We use a defense-in-depth strategy that starts at the edge and goes deep into the VPC.
 
 ```mermaid
 graph TD
-  %% Define Styles (Reverted to Old Coloring Scheme)
+  %% Define Styles
   classDef orange fill:#fff5e6,stroke:#ff9900,stroke-width:2px,color:#000;
   classDef purple fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px,color:#000;
   classDef blue fill:#e6f3ff,stroke:#0073bb,stroke-width:2px,color:#000;
@@ -58,12 +57,16 @@ graph TD
   class PublicInternet orange;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
-    WAF["AWS WAF<br>(Rate Limiting + Geo-Blocking)"]
-    CloudFront["CloudFront Distribution<br>(Edge Entry)"]
-    APIGW[("AWS API Gateway<br>(HTTP API)")]
+    WAF["AWS WAF<br>(L7 Protection)"]
+    CloudFront["CloudFront Distribution<br>(Edge Entry + X-Forwarded-For)"]
+    
+    subgraph APIGatewayChain["API Gateway Entry"]
+      APIGW[("AWS API Gateway<br>(HTTP API)")]
+      IdentityCheck["Identity Source Validation<br>(Native Header Check)"]
+    end
 
     subgraph AuthLayer["Identity & Auth"]
-      Authorizer["Lambda Authorizer<br>(HMAC + Origin Validation)"]
+      Authorizer["Lambda Authorizer<br>(HMAC + Context Injection)"]
       ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
       KmsAuth[("KMS Key:<br>Auth")]
     end
@@ -95,7 +98,7 @@ graph TD
 
       subgraph PrivateSubnets["Compute (Multi-AZ)"]
         ApiService[["ECS Fargate:<br>FastAPI API"]]
-        WorkerService[["ECS Fargate:<br>AI Worker<br>(Scales to 0)"]]
+        WorkerService[["ECS Fargate:<br>AI Worker<br>(Streaming Extraction)"]]
       end
       class PrivateSubnets blue;
     end
@@ -105,28 +108,29 @@ graph TD
 
   Client -- "1. API Key + PDF Request" --> WAF
   WAF --> CloudFront
-  CloudFront -- "2. Inject X-Origin-Verify" --> APIGW
-  APIGW -- "3. Authorize Request" --> Authorizer
-  Authorizer -- "4. Decrypt Key Hash" --> EndpointKMS
-  Authorizer -- "5. Validate Key" --> ApiKeysTable
-  Authorizer -- "6. Verify Origin Secret" --> APIGW
+  CloudFront -- "2. Forward IP + Origin Secret" --> IdentityCheck
+  IdentityCheck -- "3. Authorized Headers Only" --> APIGW
+  APIGW -- "4. Authorize Request" --> Authorizer
+  Authorizer -- "5. Decrypt Key Hash" --> EndpointKMS
+  Authorizer -- "6. Validate Key" --> ApiKeysTable
+  Authorizer -- "7. Return client_id context" --> APIGW
 
-  APIGW -- "7. Forward (VPC Link)" --> VpcLinkENI
+  APIGW -- "8. Forward (VPC Link)" --> VpcLinkENI
   VpcLinkENI --> InternalALB
   InternalALB --> ApiService
 
-  ApiService -- "8. Return Presigned URL" --> Client
-  ApiService -- "9. Set PENDING_UPLOAD" --> EndpointDynamoDB
+  ApiService -- "9. Return Presigned URL" --> Client
+  ApiService -- "10. Set PENDING_UPLOAD" --> EndpointDynamoDB
 
-  Client -- "10. Encrypted Upload" --> StorageBucket
-  StorageBucket -- "11. ObjectCreated Event" --> MainQueue
+  Client -- "11. Encrypted Upload" --> StorageBucket
+  StorageBucket -- "12. ObjectCreated Event" --> MainQueue
 
   MainQueue -- "DLQ Redrive" --> DlqQueue
 
-  WorkerService -- "12. Long Poll" --> EndpointSQS
-  WorkerService -- "13. Decrypt & Download" --> EndpointS3
-  WorkerService -- "14. Private Inference" --> EndpointBedrock
-  WorkerService -- "15. Final Result" --> EndpointDynamoDB
+  WorkerService -- "13. Long Poll" --> EndpointSQS
+  WorkerService -- "14. Stream to Temp storage" --> EndpointS3
+  WorkerService -- "15. Private Inference" --> EndpointBedrock
+  WorkerService -- "16. Final Result" --> EndpointDynamoDB
 
   %% Logical Routing via Endpoints
   EndpointDynamoDB -. "Route" .-> JobsTable
