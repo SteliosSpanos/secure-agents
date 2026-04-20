@@ -24,17 +24,20 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillars of our isolation strategy:
 
 ### 1. Zero-Egress VPC Design
+
 - **No Internet Gateway:** The VPC contains no Internet Gateway (IGW). All compute resources (ECS Fargate) live in strictly private subnets.
 - **VPC Endpoints (PrivateLink):** Communication with AWS services (S3, DynamoDB, SQS, KMS, Bedrock) occurs entirely over the AWS private network backbone. Data never traverses the public internet.
 - **Security Group Hardening:** Egress is restricted to only the necessary VPC Endpoints via Prefix Lists, preventing data exfiltration even if a container is compromised.
 
 ### 2. The "Double-Shield" Ingress
+
 - **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Geo-Blocking) and CloudFront.
 - **Enhanced Audit Trail:** CloudFront is configured to forward the `X-Forwarded-For` header, and API Gateway access logs are enriched to capture the real client IP for security forensic analysis.
 - **Native Header Validation:** API Gateway performs native `identity_source` checks for both the API Key and the `X-Origin-Verify` secret, rejecting unauthorized direct traffic before it even invokes the Lambda Authorizer.
 - **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link. This means the ALB has no public DNS or IP address.
 
 ### 3. Application Resilience & Security
+
 - **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM. This prevents Out-Of-Memory (OOM) attacks and ensures stability when processing complex or malicious "zip-bomb" documents.
 - **KMS Managed Keys:** Every service (S3, DynamoDB, SQS, ECR, CloudWatch) uses Customer Managed Keys (CMKs) for AES-256 encryption.
 
@@ -51,54 +54,57 @@ graph TD
 
   linkStyle default stroke:#000000,stroke-width:2px,fill:none;
 
+  graph TD
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
   end
   class PublicInternet orange;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
-    WAF["AWS WAF<br>(L7 Protection)"]
-    CloudFront["CloudFront Distribution<br>(Edge Entry + X-Forwarded-For)"]
-    
-    subgraph APIGatewayChain["API Gateway Entry"]
-      APIGW[("AWS API Gateway<br>(HTTP API)")]
-      IdentityCheck["Identity Source Validation<br>(Native Header Check)"]
-    end
+    WAF["AWS WAF (L7 Protection)"]
+    CloudFront["CloudFront Distribution"]
 
-    subgraph AuthLayer["Identity & Auth"]
-      Authorizer["Lambda Authorizer<br>(HMAC + Context Injection)"]
-      ApiKeysTable[("DynamoDB:<br>agents_APIKeys")]
-      KmsAuth[("KMS Key:<br>Auth")]
+    subgraph APIGatewayChain["API Gateway Entry"]
+      APIGW[("AWS API Gateway")]
+      IdentityCheck["Identity Source Validation<br>(Checks x-api-key + x-origin-verify)"]
     end
-    class AuthLayer purple;
 
     subgraph RegionalServices["Regional Services (Encrypted)"]
-      MainQueue[("SQS:<br>Work Queue")]
-      DlqQueue[("SQS:<br>Dead Letter Queue")]
-      JobsTable[("DynamoDB:<br>Job Records")]
-      StorageBucket[("S3:<br>Document Storage")]
-      KmsShared[("KMS Key:<br>Shared")]
-      KmsJobs[("KMS Key:<br>Jobs Table")]
-      BedrockInference["Bedrock Runtime<br>(eu.meta.llama3)"]
+      S3[("S3: Document Storage")]
+
+      subgraph DynamoDB["DynamoDB (Regional)"]
+        ApiKeysTable[("Table: API Keys")]
+        JobsTable[("Table: Job Records")]
+      end
+
+      subgraph KMS["KMS (Regional)"]
+        KmsAuth[("Key: Auth")]
+        KmsShared[("Key: Shared")]
+        KmsJobs[("Key: Jobs Table")]
+      end
+
+      MainQueue[("SQS: Work Queue")]
+      BedrockInference["Bedrock Runtime<br>(Llama 3.1)"]
     end
     class RegionalServices purple;
 
     subgraph VPC["VPC (No Internet Access)"]
-      VpcLinkENI["VPC Link<br>(Private Ingress)"]
+      VpcLinkENI["VPC Link ENI"]
       InternalALB[("Internal ALB")]
 
-      subgraph VpcEndpoints["PrivateLink Gateways"]
-        EndpointSQS["SQS"]
-        EndpointDynamoDB["DynamoDB"]
-        EndpointS3["S3 (Gateway)"]
-        EndpointKMS["KMS"]
-        EndpointBedrock["Bedrock"]
+      subgraph VpcEndpoints["PrivateLink & Gateway Endpoints"]
+        EndpointSQS["Interface: SQS"]
+        EndpointDynamoDB["Gateway: DynamoDB"]
+        EndpointS3["Gateway: S3"]
+        EndpointKMS["Interface: KMS"]
+        EndpointBedrock["Interface: Bedrock"]
       end
       class VpcEndpoints blue;
 
-      subgraph PrivateSubnets["Compute (Multi-AZ)"]
-        ApiService[["ECS Fargate:<br>FastAPI API"]]
-        WorkerService[["ECS Fargate:<br>AI Worker<br>(Streaming Extraction)"]]
+      subgraph PrivateSubnets["Compute (Private Subnets)"]
+        Authorizer["Lambda Authorizer"]
+        ApiService[["Fargate: FastAPI"]]
+        WorkerService[["Fargate: AI Worker"]]
       end
       class PrivateSubnets blue;
     end
@@ -106,40 +112,38 @@ graph TD
   end
   class AWSCloud orange;
 
-  Client -- "1. API Key + PDF Request" --> WAF
+  %% 1. Ingress Flow
+  Client -- "1. Request + API Key" --> WAF
   WAF --> CloudFront
-  CloudFront -- "2. Forward IP + Origin Secret" --> IdentityCheck
-  IdentityCheck -- "3. Authorized Headers Only" --> APIGW
-  APIGW -- "4. Authorize Request" --> Authorizer
-  Authorizer -- "5. Decrypt Key Hash" --> EndpointKMS
-  Authorizer -- "6. Validate Key" --> ApiKeysTable
-  Authorizer -- "7. Return client_id context" --> APIGW
+  CloudFront -- "2. Forward x-origin-verify" --> IdentityCheck
+  IdentityCheck -- "3. Valid Headers Found" --> APIGW
 
-  APIGW -- "8. Forward (VPC Link)" --> VpcLinkENI
+  %% 2. Auth Flow (Corrected Endpoint Hops)
+  APIGW -- "4. Invoke" --> Authorizer
+  Authorizer -- "5. Decrypt Request" --> EndpointKMS
+  EndpointKMS -.-> KmsAuth
+  Authorizer -- "6. Verify Key" --> EndpointDynamoDB
+  EndpointDynamoDB -.-> ApiKeysTable
+  Authorizer -- "7. Allow + context" --> APIGW
+
+  %% 3. API Flow
+  APIGW -- "8. VPC Link" --> VpcLinkENI
   VpcLinkENI --> InternalALB
   InternalALB --> ApiService
+  ApiService -- "9. Presigned URL" --> Client
+  ApiService -- "10. Log Job" --> EndpointDynamoDB
+  EndpointDynamoDB -.-> JobsTable
 
-  ApiService -- "9. Return Presigned URL" --> Client
-  ApiService -- "10. Set PENDING_UPLOAD" --> EndpointDynamoDB
-
-  Client -- "11. Encrypted Upload" --> StorageBucket
-  StorageBucket -- "12. ObjectCreated Event" --> MainQueue
-
-  MainQueue -- "DLQ Redrive" --> DlqQueue
-
-  WorkerService -- "13. Long Poll" --> EndpointSQS
-  WorkerService -- "14. Stream to Temp storage" --> EndpointS3
-  WorkerService -- "15. Private Inference" --> EndpointBedrock
-  WorkerService -- "16. Final Result" --> EndpointDynamoDB
-
-  %% Logical Routing via Endpoints
-  EndpointDynamoDB -. "Route" .-> JobsTable
-  EndpointSQS -. "Route" .-> MainQueue
-  EndpointS3 -. "Route" .-> StorageBucket
-  EndpointKMS -. "Route" .-> KmsShared
-  EndpointKMS -. "Route" .-> KmsJobs
-  EndpointKMS -. "Route" .-> KmsAuth
-  EndpointBedrock -. "Dynamic Routing" .-> BedrockInference
+  %% 4. Worker Flow
+  Client -- "11. Upload" --> S3
+  S3 -- "12. Event" --> MainQueue
+  WorkerService -- "13. Pull Task" --> EndpointSQS
+  EndpointSQS -.-> MainQueue
+  WorkerService -- "14. Stream File" --> EndpointS3
+  EndpointS3 -.-> S3
+  WorkerService -- "15. Inference" --> EndpointBedrock
+  EndpointBedrock -.-> BedrockInference
+  WorkerService -- "16. Update Status" --> EndpointDynamoDB
 ```
 
 ### Key Architectural Decisions (ADRs)
