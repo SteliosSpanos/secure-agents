@@ -1,3 +1,5 @@
+import os
+import tempfile
 import io
 import time
 import json
@@ -69,10 +71,10 @@ def extend_sqs_visibility(receipt_handle: str, timeout: int = 600):
 
 
 def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
-    """Downloads PDF from S3 into memory and extracts text"""
+    """Downloads PDF from S3 into a temporary file and extracts text to prevent OOM errors"""
     decoded_key = unquote_plus(key)
 
-    # Check object size before committing to a full download 
+    # Check object size before committing to a download 
     try:
         head = s3.head_object(Bucket=bucket, Key=decoded_key)
         content_length = head.get("ContentLength", 0)
@@ -85,13 +87,15 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
         raise
 
     logger.info(f"Downloading s3://{bucket}/{decoded_key}")
-    response = s3.get_object(Bucket=bucket, Key=decoded_key)
-    pdf_bytes = response["Body"].read()
-
-    pdf_file = io.BytesIO(pdf_bytes)
-
+    
+    # Use a temporary file to avoid holding the entire PDF in memory
+    tmp_file_path = None
     try:
-        reader = PdfReader(pdf_file)
+        with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
+            s3.download_fileobj(bucket, decoded_key, tmp_file)
+            tmp_file_path = tmp_file.name
+
+        reader = PdfReader(tmp_file_path)
 
         if reader.is_encrypted:
             logger.warning(f"File {decoded_key} is encrypted.")
@@ -107,13 +111,23 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
             if extracted:
                 text += extracted + "\n"
 
+            if len(text) > (settings.char_limit * 1.2):
+                logger.warning(f"Extracted text limit reached for {decoded_key}. Truncating.")
+                break
+
         return text.strip()
     except PdfReadError:
         logger.exception(f"PdfReadError for {decoded_key}.")
         raise ValueError("PDF structure is corrupted")
+    except (ClientError, BotoCoreError):
+        logger.exception(f"Failed to download or process s3://{bucket}/{decoded_key}")
+        raise
     except Exception:
-        logger.exception(f"Unexpected pasring error for {decoded_key}.")
+        logger.exception(f"Unexpected parsing error for {decoded_key}.")
         raise ValueError("Could not parse PDF")
+    finally:
+        if tmp_file_path and os.path.exists(tmp_file_path):
+            os.remove(tmp_file_path)
 
 
 
