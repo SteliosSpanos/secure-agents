@@ -12,6 +12,43 @@ data "aws_prefix_list" "dynamodb" {
   prefix_list_id = aws_vpc_endpoint.dynamodb.prefix_list_id
 }
 
+data "aws_elb_service_account" "main" {}
+
+// S3 ALB Logs
+
+data "aws_iam_policy_document" "alb_logs_bucket_policy" {
+  statement {
+    sid    = "AllowELBServiceAccountWrite"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = [data.aws_elb_service_account.main.arn]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.alb_logs.arn}/alb-logs/AWSLogs/${data.aws_caller_identity.current.account_id}/*"]
+  }
+
+  statement {
+    sid    = "DenyNonSSLTransport"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.alb_logs.arn,
+      "${aws_s3_bucket.alb_logs.arn}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+
 // S3 Bucket Policy (Main Bucket)
 
 data "aws_iam_policy_document" "s3_bucket_policy" {
