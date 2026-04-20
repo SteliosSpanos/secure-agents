@@ -54,7 +54,6 @@ graph TD
 
   linkStyle default stroke:#000000,stroke-width:2px,fill:none;
 
-  graph TD
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
   end
