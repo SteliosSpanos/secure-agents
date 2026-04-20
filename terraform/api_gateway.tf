@@ -98,6 +98,14 @@ resource "aws_lambda_function" "authorizer" {
 
   depends_on = [aws_cloudwatch_log_group.authorizer_logs]
 
+  vpc_config {
+    subnet_ids = [
+      aws_subnet.agents_private_subnet_1.id,
+      aws_subnet.agents_private_subnet_2.id
+    ]
+    security_group_ids = [aws_security_group.authorizer_lambda_sg.id]
+  }
+
   environment {
     variables = {
       API_KEYS_TABLE = aws_dynamodb_table.api_keys.name
@@ -116,6 +124,7 @@ resource "aws_apigatewayv2_authorizer" "lambda_auth" {
   name                              = "lambda-authorizer"
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true
+  authorizer_result_ttl_in_seconds  = 0
 }
 
 // Permission for API Gateway to call Lambda
