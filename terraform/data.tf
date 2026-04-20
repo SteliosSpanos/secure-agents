@@ -502,7 +502,8 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     actions = [
       "sqs:ReceiveMessage",
       "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes"
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility"
     ]
     resources = [aws_sqs_queue.agent_queue.arn]
   }

@@ -63,15 +63,13 @@ resource "aws_apigatewayv2_stage" "default_stage" {
   access_log_settings {
     destination_arn = aws_cloudwatch_log_group.api_gateway_logs.arn
     format = jsonencode({
-      requestId      = "$context.requestId"
-      ip             = "$context.identity.sourceIp"
-      requestTime    = "$context.requestTime"
-      httpMethod     = "$context.httpMethod"
-      routeKey       = "$context.routeKey"
-      status         = "$context.status"
-      protocol       = "$context.protocol"
-      responseLength = "$context.responseLength"
-      authorizer_id  = "$context.authorizer.client_id"
+      requestId     = "$context.requestId"
+      edgeIp        = "$context.identity.sourceIp"
+      forwardedIp   = "$request.header.x-forwarded-for"
+      trueViewer    = "$request.header.CloudFront-Viewer-Address"
+      httpMethod    = "$context.httpMethod"
+      status        = "$context.status"
+      authorizer_id = "$context.authorizer.client_id"
     })
   }
 }

@@ -79,7 +79,11 @@ resource "aws_cloudfront_origin_request_policy" "forward_api_key" {
   headers_config {
     header_behavior = "whitelist"
     headers {
-      items = ["x-api-key", "X-Forwarded-For"]
+      items = [
+        "x-api-key",
+        "X-Forwarded-For",
+        "CloudFront-Viewer-Address"
+      ]
     }
   }
 
