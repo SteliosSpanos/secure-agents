@@ -103,7 +103,7 @@ resource "aws_security_group" "fargate_worker_sg" {
 
 resource "aws_security_group" "vpc_endpoints_sg" {
   name        = "${var.project_name}-endpoints-sg"
-  description = "Allows ECS tasks to communicate with AWS Service Endpoints"
+  description = "Allow ECS tasks to communicate with AWS Service Endpoints"
   vpc_id      = aws_vpc.agents_vpc.id
 
   ingress {
@@ -121,3 +121,23 @@ resource "aws_security_group" "vpc_endpoints_sg" {
     Name = "${var.project_name}-endpoints-sg"
   }
 }
+
+// Lambda Authorizer
+
+resource "aws_security_group" "authorizer_lambda_sg" {
+  name        = "${var.project_name}-authorizer-sg"
+  description = "Allow Authorizer Lambda to reach DynamoDB Endpoints"
+  vpc_id      = aws_vpc.agents_vpc.id
+
+  egress {
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_prefix_list.dynamodb.id]
+  }
+
+  tags = {
+    Name = "${var.project_name}-authorizer-sg"
+  }
+}
+

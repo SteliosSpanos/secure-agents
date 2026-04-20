@@ -53,6 +53,11 @@ resource "aws_iam_role_policy" "authorizer_policy" {
   policy = data.aws_iam_policy_document.authorizer_iam_policy.json
 }
 
+resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
+  role       = aws_iam_role.authorizer_role.id
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
 // VPC Flow Logs
 
 resource "aws_iam_role" "vpc_flow_log" {

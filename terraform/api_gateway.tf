@@ -120,7 +120,7 @@ resource "aws_apigatewayv2_authorizer" "lambda_auth" {
   api_id                            = aws_apigatewayv2_api.fastapi_gateway.id
   authorizer_type                   = "REQUEST"
   authorizer_uri                    = aws_lambda_function.authorizer.invoke_arn
-  identity_sources                  = ["$request.header.x-api-key"] // Don't start the lambda if the request doesn;t include the x-api-key header
+  identity_sources                  = ["$request.header.x-api-key", "$request.header.x-origin-verify"] // Don't start the lambda if critical headers are missing
   name                              = "lambda-authorizer"
   authorizer_payload_format_version = "2.0"
   enable_simple_responses           = true

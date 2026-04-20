@@ -21,7 +21,7 @@ resource "aws_wafv2_web_acl" "api_waf" {
     }
     statement {
       rate_based_statement {
-        limit              = 100
+        limit              = 500
         aggregate_key_type = "IP"
       }
     }
@@ -48,6 +48,25 @@ resource "aws_wafv2_web_acl" "api_waf" {
     visibility_config {
       cloudwatch_metrics_enabled = true
       metric_name                = "CommonRulesMetric"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  rule {
+    name     = "AWSManagedRulesKnownBadInputs"
+    priority = 3
+    override_action {
+      none {}
+    }
+    statement {
+      managed_rule_group_statement {
+        name        = "AWSManagedRulesKnownBadInputsRuleSet"
+        vendor_name = "AWS"
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "KnownBadInputsMetric"
       sampled_requests_enabled   = true
     }
   }

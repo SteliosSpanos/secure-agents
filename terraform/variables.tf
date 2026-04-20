@@ -81,3 +81,9 @@ variable "allowed_origins" {
   default     = "http://localhost:3000"
   description = "Allowed origins for CORS"
 }
+
+variable "api_domain" {
+  type        = string
+  default     = "http://localhost:3000"
+  description = "API domain for the URL"
+}

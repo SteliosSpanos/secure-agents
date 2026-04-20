@@ -14,6 +14,10 @@ data "aws_prefix_list" "dynamodb" {
 
 data "aws_elb_service_account" "main" {}
 
+data "aws_cloudfront_cache_policy" "caching_disabled" {
+  name = "Managed-CachingDisabled"
+}
+
 // S3 ALB Logs
 
 data "aws_iam_policy_document" "alb_logs_bucket_policy" {
