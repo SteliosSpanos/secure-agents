@@ -1,4 +1,5 @@
 import os
+import sys
 import tempfile
 import io
 import time
@@ -41,14 +42,40 @@ dynamodb = boto3.resource("dynamodb", config=aws_config)
 jobs_table = dynamodb.Table(settings.jobs_table_name)
 
 
-# Graceful shutdown handler
+
+# SIGTERM handler is called by ECS before it terminates the Fargate task during scaling, deployment...
 
 shutdown_flag = False
+active_job = {"client_id": None, "job_id": None, "receipt_handle": None}
 
 def handle_sigterm(*args):
     global shutdown_flag
-    logger.info("SIGTERM received. Shutting down gracefully after current task...")
+    logger.info("SIGTERM received. Fargate container scaling in.")
     shutdown_flag = True
+
+    # If we are in the middle of a Bedrock call, rescue the database Records
+    if active_job["job_id"]:
+        logger.info(f"Emergency Rescue: Reverting job {active_job['job_id']} to PENDING_UPLOAD.")
+        try:
+            update_job(
+                active_job["client_id"],
+                active_job["job_id"],
+                "PENDING_UPLOAD"
+            )
+
+            sqs.change_message_visibility(
+                QueueUrl=settings.sqs_queue_url,
+                ReceiptHandle=active_job["receipt_handle"],
+                VisibilityTimeout=0
+            )
+            logger.info("Rescue complete. Exiting gracefully.")
+        except (ClientError, BotoCoreError):
+            logger.exception(f"AWS SDK error during rescue of {active_job['job_id']}.")
+        except Exception:
+            logger.exception("Failed to rescue job during SIGTERM.")
+        finally:
+            sys.exit(0)
+
 
 signal.signal(signal.SIGTERM, handle_sigterm)
 signal.signal(signal.SIGINT, handle_sigterm)
@@ -280,6 +307,11 @@ def main():
                             logger.info(f"Job {job_id} lock denied (already processing/completed).")
                             continue
 
+                        # Populate active_job for SIGTERM handler 
+                        active_job["client_id"] = client_id
+                        active_job["job_id"] = job_id
+                        active_job["receipt_handle"] = receipt_handle
+
 
                         try:
                             summary, is_truncated = process_document(bucket, key, receipt_handle)
@@ -297,6 +329,8 @@ def main():
                         except Exception:
                             logger.exception(f"Fatal error for job {job_id}.")
                             update_job(client_id, job_id, "FAILED", result_summary="Document processing failed")
+                        finally:
+                            active_job.update({"client_id": None, "job_id": None, "receipt_handle": None})
 
                     sqs.delete_message(
                         QueueUrl=settings.sqs_queue_url,
