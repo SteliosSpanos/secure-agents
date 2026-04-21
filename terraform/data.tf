@@ -85,7 +85,8 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
     }
     actions = [
       "s3:GetObject",
-      "s3:PutObject"
+      "s3:PutObject",
+      "s3:HeadObject"
     ]
     resources = ["${aws_s3_bucket.agents.arn}/*"]
     condition {
@@ -108,7 +109,8 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
     }
     actions = [
       "s3:GetObject",
-      "s3:PutObject"
+      "s3:PutObject",
+      "s3:HeadObject"
     ]
     resources = [
       aws_s3_bucket.agents.arn,
@@ -402,7 +404,10 @@ data "aws_iam_policy_document" "dynamodb_endpoint_policy" {
       "dynamodb:PutItem",
       "dynamodb:UpdateItem"
     ]
-    resources = [aws_dynamodb_table.jobs.arn]
+    resources = [
+      aws_dynamodb_table.jobs.arn,
+      aws_dynamodb_table.api_keys.arn
+    ]
     condition {
       test     = "StringEquals"
       variable = "aws:PrincipalAccount"
@@ -462,7 +467,7 @@ data "aws_iam_policy_document" "api_iam_policy" {
     ]
     resources = [
       aws_kms_key.jobs_table.arn,
-      aws_kms_alias.shared.arn
+      aws_kms_key.shared.arn
     ]
   }
 
