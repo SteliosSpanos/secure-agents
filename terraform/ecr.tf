@@ -6,7 +6,7 @@
 
 resource "aws_ecr_repository" "api" {
   name                 = "${var.project_name}-api"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   encryption_configuration {
     encryption_type = "KMS"
@@ -50,7 +50,7 @@ resource "aws_ecr_lifecycle_policy" "api_policy" {
 
 resource "aws_ecr_repository" "worker" {
   name                 = "${var.project_name}-worker"
-  image_tag_mutability = "MUTABLE"
+  image_tag_mutability = "IMMUTABLE"
 
   encryption_configuration {
     encryption_type = "KMS"
