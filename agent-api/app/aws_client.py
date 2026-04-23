@@ -131,7 +131,7 @@ def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
             "created_at": datetime.now(timezone.utc).isoformat(),
             "expires_at": expiration
         },
-        ConditionExpression="attribute_not_exists(client_id)"
+        ConditionExpression="attribute_not_exists(client_id) AND attribute_not_exists(job_id)"
        )
     except (ClientError, BotoCoreError) as e:
         logger.exception("Job logging failed.")

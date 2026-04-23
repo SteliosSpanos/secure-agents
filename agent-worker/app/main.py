@@ -241,8 +241,13 @@ def update_job(client_id: str, job_id: str, status_val: str, result_summary: str
     }
 
     if expected_status:
-        kwargs["ConditionExpression"] = "#s = :expected_status"
-        kwargs["ExpressionAttributeValues"][":expected_status"] = expected_status
+        if expected_status == "PENDING_UPLOAD":
+            kwargs["ConditionExpression"] = "#s IN (:exp1, :exp2)"
+            kwargs["ExpressionAttributeValues"][":exp1"] = "PENDING_UPLOAD"
+            kwargs["ExpressionAttributeValues"][":exp2"] = "PROCESSING"
+        else:
+            kwargs["ConditionExpression"] = "#s = :expected_status"
+            kwargs["ExpressionAttributeValues"][":expected_status"] = expected_status
 
     try:
         jobs_table.update_item(**kwargs)
