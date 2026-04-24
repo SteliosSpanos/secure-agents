@@ -2,11 +2,9 @@ name: CI/CD Pipeline
 
 on:
   push:
-    branches:
-      - main
+    branches: [ "main" ]
   pull_request:
-    branches:
-      - main
+    branches: [ "main" ]
 
 # Prevent concurrent deployments from clashing
 concurrency:
@@ -27,27 +25,21 @@ permissions:
 
 jobs:
   code-quality:
-    name: Check Formatting and Lint
+    name: Code Quality
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout Code
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v5
+      - name: Run Ruff Linter
+        uses: astral-sh/ruff-action@v3
         with:
-          python-version: "3.11"
-          cache: "pip" # Speed up recurring runs
+          args: "check ."
 
-      - name: Install Ruff
-        run: pip install ruff
-
-      - name: Check Formatting
-        run: ruff format --check .
-
-      - name: Run Linter
-        run: ruff check .
+      - name: Run Ruff Formatter
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check ."
 
   deploy:
     name: Build and Deploy to AWS
@@ -62,36 +54,30 @@ jobs:
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v4
         with:
-          # Note: Update this ARN to match the output from 'terraform/iam_github.tf'
-          role-to-assume: arn:aws:iam::487322974754:role/GithubActionsRole
+          # Store your ARN (e.g. arn:aws:iam::123456789012:role/GithubActionsRole) in GitHub Secrets
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
 
       - name: Login to Amazon ECR
         id: login-ecr
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Build and Push API Image
+      - name: Build, tag, and push images to ECR
         env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
         run: |
-          docker build -t $ECR_REGISTRY/$API_ECR_REPOSITORY:$IMAGE_TAG ./agent-api
-          docker push $ECR_REGISTRY/$API_ECR_REPOSITORY:$IMAGE_TAG
+          docker build -t $REGISTRY/$API_ECR_REPOSITORY:$TAG ./agent-api
+          docker push $REGISTRY/$API_ECR_REPOSITORY:$TAG
+          docker build -t $REGISTRY/$WORKER_ECR_REPOSITORY:$TAG ./agent-worker
+          docker push $REGISTRY/$WORKER_ECR_REPOSITORY:$TAG
 
-      - name: Build and Push Worker Image
-        env:
-          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
-          IMAGE_TAG: ${{ github.sha }}
-        run: |
-          docker build -t $ECR_REGISTRY/$WORKER_ECR_REPOSITORY:$IMAGE_TAG ./agent-worker
-          docker push $ECR_REGISTRY/$WORKER_ECR_REPOSITORY:$IMAGE_TAG
-
-      - name: Download task definition
+      - name: Download ECS task definitions
         run: |
           aws ecs describe-task-definition --task-definition ${{ env.API_ECR_REPOSITORY }} --query taskDefinition > api-task-def.json
           aws ecs describe-task-definition --task-definition ${{ env.WORKER_ECR_REPOSITORY }} --query taskDefinition > worker-task-def.json
 
-      - name: Fill in the new image ID in the Amazon ECS task definition for API
+      - name: Render API Task Definition
         id: task-def-api
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
@@ -99,7 +85,7 @@ jobs:
           container-name: fastapi-container
           image: ${{ steps.login-ecr.outputs.registry }}/${{ env.API_ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Fill in the new image ID in the Amazon ECS task definition for Worker
+      - name: Render Worker Task Definition
         id: task-def-worker
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
@@ -107,7 +93,7 @@ jobs:
           container-name: agent-worker
           image: ${{ steps.login-ecr.outputs.registry }}/${{ env.WORKER_ECR_REPOSITORY }}:${{ github.sha }}
 
-      - name: Deploy Amazon ECS task definition for API
+      - name: Deploy API Service
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def-api.outputs.task-definition }}
@@ -115,7 +101,7 @@ jobs:
           cluster: ${{ env.ECS_CLUSTER }}
           wait-for-service-stability: true
 
-      - name: Deploy Amazon ECS task definition for Worker
+      - name: Deploy Worker Service
         uses: aws-actions/amazon-ecs-deploy-task-definition@v1
         with:
           task-definition: ${{ steps.task-def-worker.outputs.task-definition }}
