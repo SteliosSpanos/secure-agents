@@ -1,7 +1,6 @@
 import os
 import sys
 import tempfile
-import io
 import time
 import json
 import boto3
