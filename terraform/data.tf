@@ -496,7 +496,8 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     sid    = "S3Processing"
     effect = "Allow"
     actions = [
-      "s3:GetObject"
+      "s3:GetObject",
+      "s3:HeadObject"
     ]
     resources = ["${aws_s3_bucket.agents.arn}/*"]
   }

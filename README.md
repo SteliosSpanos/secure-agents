@@ -9,8 +9,8 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 ```text
 .
 ├── .github/workflows/      # CI/CD Pipeline (Ruff + ECR/ECS Deploy)
-├── agent-api/              # FastAPI application (Ingress & Status)
-├── agent-worker/           # Python worker (PDF Processing & Bedrock AI)
+├── agent-api/              # FastAPI application v1.0.1 (Ingress & Status)
+├── agent-worker/           # Python 3.11 worker (PDF Processing & Bedrock AI)
 ├── bootstrap/              # Terraform for remote state (S3/DynamoDB)
 ├── lambda-authorizer/      # Zero-Trust HMAC & Origin validation logic
 ├── scripts/                # Management scripts (API Key rotation)
@@ -31,7 +31,7 @@ SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillar
 
 ### 2. The "Double-Shield" Ingress
 
-- **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Geo-Blocking) and CloudFront.
+- **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Managed Rule Sets) and CloudFront.
 - **Enhanced Audit Trail:** CloudFront is configured to forward the `X-Forwarded-For` header, and API Gateway access logs are enriched to capture the real client IP for security forensic analysis.
 - **Native Header Validation:** API Gateway performs native `identity_source` checks for both the API Key and the `X-Origin-Verify` secret, rejecting unauthorized direct traffic before it even invokes the Lambda Authorizer.
 - **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link. This means the ALB has no public DNS or IP address.
@@ -83,7 +83,7 @@ graph TD
       end
 
       MainQueue[("SQS: Work Queue")]
-      BedrockInference["Bedrock Runtime<br>(Llama 3.1)"]
+      BedrockInference["Bedrock Runtime<br>(Llama 3)"]
     end
     class RegionalServices purple;
 
@@ -155,7 +155,7 @@ graph TD
     - **Why?** Ensures our application servers have **no public IP addresses**. They live in strictly private subnets, accessible only through the API Gateway.
 3.  **On-Demand Compute (Scale-to-Zero):**
     - **Decision:** Fargate for both API and Worker nodes, with a specific focus on **scaling the Worker to zero**.
-    - **Why?** PDF processing and LLM orchestration are bursty. The Worker service maintains a `desired_count = 0` when the SQS queue is empty, automatically spinning up when new documents arrive. This eliminates idle compute costs while ensuring 24/7 availability.
+    - **Why?** PDF processing and LLM orchestration are bursty. The Worker service maintains a `min_capacity = 0`, automatically spinning up when the SQS backlog exceeds 5 messages per task and scaling back to zero when idle. This eliminates idle compute costs while ensuring 24/7 availability.
 4.  **Amazon Bedrock (Private Inference):**
     - **Decision:** Serverless AI via Bedrock (Llama 3 8B).
     - **Why?** Ensures data is **never used to train base models**. Via VPC Endpoints, data travels from S3 to Bedrock over the AWS private network, never crossing the public internet.
@@ -307,7 +307,7 @@ To destroy the stack without leaving orphaned resources:
 
 ### Threat Model
 
-- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting and CloudFront geo-blocking.
+- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting and standard security rule sets.
 - **API Key Theft:** Mitigated by hashing keys in DynamoDB and requiring `X-Origin-Verify` headers to prevent direct Gateway access.
 - **Data Exfiltration:** Mitigated by Zero-Egress VPC design; containers have no path to the public internet.
 - **Unauthorized Data Access:** S3 and DynamoDB policies restrict access strictly to the VPC Endpoints and Task Roles.

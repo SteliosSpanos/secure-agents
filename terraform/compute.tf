@@ -86,6 +86,10 @@ resource "aws_ecs_task_definition" "worker_task" {
       name      = "agent-worker"
       image     = "${aws_ecr_repository.worker.repository_url}:${var.image_tag}"
       essential = true
+
+      // Maximize graceful shutdown for Fargate worker
+      stopTimeout = 120
+
       environment = [
         { name = "AWS_REGION", value = var.region },
         { name = "SQS_QUEUE_URL", value = aws_sqs_queue.agent_queue.id },
