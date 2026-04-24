@@ -17,6 +17,7 @@ session = boto3.Session(region_name=region)
 dynamodb = session.resource("dynamodb")
 api_keys_table = dynamodb.Table(table_name)
 
+
 def generate_client_key(client_name: str):
     """Generates a secure API key, hashes it and saves it to DynamoDB"""
     raw_key = "ak_live_" + secrets.token_urlsafe(32)
@@ -24,16 +25,12 @@ def generate_client_key(client_name: str):
 
     try:
         api_keys_table.put_item(
-            Item={
-                "api_key": hashed_key,
-                "client_id": client_name,
-                "active": True
-            }
+            Item={"api_key": hashed_key, "client_id": client_name, "active": True}
         )
 
         print("--- API Key Generated and Saved ---")
         print(f"Client ID: {client_name}")
-        print(f"Raw API Key: {raw_key}") # Goes only to the client
+        print(f"Raw API Key: {raw_key}")  # Goes only to the client
     except (ClientError, BotoCoreError):
         logger.exception("AWS Infrastructure Error.")
         print("\nFAILED: Could not save key. Check AWS credentials and table name.\n")
@@ -54,11 +51,8 @@ def deactivate_key(raw_api_key):
         api_keys_table.update_item(
             Key={"api_key": hashed_key},
             UpdateExpression="SET active = :val, expires_at = :ttl",
-            ExpressionAttributeValues={
-                ":val": False,
-                ":ttl": expiration
-            },
-            ConditionExpression="attribute_exists(api_key)"
+            ExpressionAttributeValues={":val": False, ":ttl": expiration},
+            ConditionExpression="attribute_exists(api_key)",
         )
 
         print(f"API key {raw_api_key[:12]}... has been deactivated.")
@@ -82,14 +76,18 @@ def deactivate_key(raw_api_key):
 if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
-        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+        format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
     parser = argparse.ArgumentParser(description="SecureAgents API Key Manager")
 
     group = parser.add_mutually_exclusive_group(required=True)
-    group.add_argument("--client-id", type=str, help="Generate a new key for this client name")
-    group.add_argument("--deactivate", type=str, help="The raw API key string to deactivate")
+    group.add_argument(
+        "--client-id", type=str, help="Generate a new key for this client name"
+    )
+    group.add_argument(
+        "--deactivate", type=str, help="The raw API key string to deactivate"
+    )
 
     args = parser.parse_args()
 
@@ -97,5 +95,3 @@ if __name__ == "__main__":
         generate_client_key(args.client_id)
     elif args.deactivate:
         deactivate_key(args.deactivate)
-
-    

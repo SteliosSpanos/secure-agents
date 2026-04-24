@@ -17,18 +17,15 @@ logger = logging.getLogger()
 logger.setLevel(logging.INFO)
 
 aws_config = Config(
-    retries={
-        "max_attempts": 3,
-        "mode": "standard"
-    },
+    retries={"max_attempts": 3, "mode": "standard"},
     connect_timeout=2,
-    read_timeout=10 # Don't hang API Gateway waiting for a slow DB
+    read_timeout=10,  # Don't hang API Gateway waiting for a slow DB
 )
 
 
 # Handling Database and TCP connections outside of the handler for reduced latecny from cold starts
 dynamodb = boto3.resource("dynamodb", config=aws_config)
-table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys") # From terraform
+table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys")  # From terraform
 api_keys_table = dynamodb.Table(table_name)
 
 expected_origin_secret = os.environ.get("ORIGIN_SECRET")
@@ -45,9 +42,10 @@ def lambda_handler(event, context):
     origin_header = headers.get("x-origin-verify")
 
     if origin_header != expected_origin_secret:
-        logger.critical("SECURITY ALERT: Request bypassed CloudFront/WAF. Missing or invalid X-Origin-Verify header.")
+        logger.critical(
+            "SECURITY ALERT: Request bypassed CloudFront/WAF. Missing or invalid X-Origin-Verify header."
+        )
         return {"isAuthorized": False}
-
 
     api_key = headers.get("x-api-key")
 
@@ -59,8 +57,7 @@ def lambda_handler(event, context):
 
     try:
         response = api_keys_table.get_item(
-            Key={"api_key": hashed_key},
-            ConsistentRead=True
+            Key={"api_key": hashed_key}, ConsistentRead=True
         )
         item = response.get("Item")
 
@@ -74,12 +71,7 @@ def lambda_handler(event, context):
             client_id = item.get("client_id", "unknown_client")
             logger.info(f"Authorized client: {client_id}.")
 
-            return {
-                "isAuthorized": True,
-                "context": {
-                    "client_id": client_id
-                }
-            }
+            return {"isAuthorized": True, "context": {"client_id": client_id}}
 
         logger.warning(f"Invalid or inactive API key: {hashed_key[:8]}...")
         return {"isAuthorized": False}
