@@ -13,8 +13,9 @@ resource "aws_wafv2_web_acl" "api_waf" {
     allow {}
   }
 
+  # Global Rate Limit
   rule {
-    name     = "RateLimit"
+    name     = "GlobalRateLimit"
     priority = 1
     action {
       block {}
@@ -27,7 +28,40 @@ resource "aws_wafv2_web_acl" "api_waf" {
     }
     visibility_config {
       cloudwatch_metrics_enabled = true
-      metric_name                = "RateLimitMetric"
+      metric_name                = "GlobalRateLimitMetric"
+      sampled_requests_enabled   = true
+    }
+  }
+
+  # Tighter Rate Limit for Upload Requests
+  rule {
+    name     = "UploadRateLimit"
+    priority = 2
+    action {
+      block {}
+    }
+    statement {
+      rate_based_statement {
+        limit              = 100
+        aggregate_key_type = "IP"
+        scope_down_statement {
+          byte_match_statement {
+            field_to_match {
+              uri_path {}
+            }
+            positional_constraint = "EXACTLY"
+            search_string         = "/api/v1/request-upload"
+            text_transformation {
+              priority = 0
+              type     = "NONE"
+            }
+          }
+        }
+      }
+    }
+    visibility_config {
+      cloudwatch_metrics_enabled = true
+      metric_name                = "UploadRateLimitMetric"
       sampled_requests_enabled   = true
     }
   }
@@ -35,7 +69,7 @@ resource "aws_wafv2_web_acl" "api_waf" {
   // AWS Managed Rules (SQLi, XSS, etc)
   rule {
     name     = "AWSManagedRulesCommon"
-    priority = 2
+    priority = 3
     override_action {
       none {}
     }
@@ -54,7 +88,7 @@ resource "aws_wafv2_web_acl" "api_waf" {
 
   rule {
     name     = "AWSManagedRulesKnownBadInputs"
-    priority = 3
+    priority = 4
     override_action {
       none {}
     }
@@ -76,4 +110,12 @@ resource "aws_wafv2_web_acl" "api_waf" {
     metric_name                = "GlobalWafMetric"
     sampled_requests_enabled   = true
   }
+}
+
+// WAF Logging Configuration
+
+resource "aws_wafv2_web_acl_logging_configuration" "waf_logging" {
+  provider                = aws.global
+  log_destination_configs = [aws_cloudwatch_log_group.waf_logs.arn]
+  resource_arn            = aws_wafv2_web_acl.api_waf.arn
 }
