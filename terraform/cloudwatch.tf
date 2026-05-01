@@ -62,6 +62,19 @@ resource "aws_cloudwatch_log_group" "authorizer_logs" {
   }
 }
 
+// WAF Logs (must be in us-east-1 for Cloudfront and name must start with aws-waf-logs-)
+
+resource "aws_cloudwatch_log_group" "waf_logs" {
+  provider          = aws.global
+  name              = "aws-waf-logs-${var.project_name}"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.shared.arn
+
+  tags = {
+    Name = "${var.project_name}-waf-logs"
+  }
+}
+
 // API Gateway Logs
 
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
