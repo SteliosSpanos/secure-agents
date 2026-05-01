@@ -3,6 +3,7 @@
   - aws_kms_key.api_keys_table: encrypts agents_APIKeys (auth credentials)
   - aws_kms_key.jobs_table: encrypts agents_Jobs (client document data)
   - aws_kms_key.shared: encrypts S3, SQS, Cloudwatch, ECR
+  - aws_kms_key.waf_log_key: encrypts WAF logs that are in us-east-1
 */
 
 // API Keys Table Key
@@ -57,4 +58,24 @@ resource "aws_kms_key" "shared" {
 resource "aws_kms_alias" "shared" {
   name          = "alias/${var.project_name}-shared"
   target_key_id = aws_kms_key.shared.key_id
+}
+
+// WAF Logs Key
+
+resource "aws_kms_key" "waf_log" {
+  description             = "${var.project_name}-waf-log-kms-key"
+  provider                = aws.global // Uses us-east-1 provider
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.waf_log_kms_policy.json
+
+  tags = {
+    Name = "${var.project_name}-waf-log-kms-key"
+  }
+}
+
+resource "aws_kms_alias" "waf_log" {
+  provider      = aws.global
+  name          = "alias/${var.project_name}-waf-log"
+  target_key_id = aws_kms_key.waf_log.key_id
 }
