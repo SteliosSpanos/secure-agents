@@ -28,6 +28,7 @@ SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillar
 - **No Internet Gateway:** The VPC contains no Internet Gateway (IGW). All compute resources (ECS Fargate) live in strictly private subnets.
 - **VPC Endpoints (PrivateLink):** Communication with AWS services (S3, DynamoDB, SQS, KMS, Bedrock) occurs entirely over the AWS private network backbone. Data never traverses the public internet.
 - **Security Group Hardening:** Egress is restricted to only the necessary VPC Endpoints via Prefix Lists, preventing data exfiltration even if a container is compromised.
+- **Resource-Based Policies:** S3 and DynamoDB tables have policies that explicitly `Deny` any traffic that does not originate from the specific VPC Endpoints.
 
 ### 2. The "Double-Shield" Ingress
 
@@ -38,7 +39,9 @@ SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillar
 
 ### 3. Application Resilience & Security
 
-- **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM. This prevents Out-Of-Memory (OOM) attacks and ensures stability when processing complex or malicious "zip-bomb" documents.
+- **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM. This prevents Out-Of-Memory (OOM) attacks.
+- **Size & Content Limits:** The system enforces a strict maximum file size (default 10MB) and truncates extracted text to prevent LLM context window overflows and "token-bomb" cost attacks.
+- **Graceful Shutdown (SIGTERM):** Workers are programmed to rescue active jobs during Fargate scale-in events. If a worker receives a SIGTERM, it attempts to revert the job state to `PENDING_UPLOAD` and release the SQS message before exiting.
 - **KMS Managed Keys:** Every service (S3, DynamoDB, SQS, ECR, CloudWatch) uses Customer Managed Keys (CMKs) for AES-256 encryption.
 
 ---
@@ -252,9 +255,17 @@ This API uses an asynchronous, Zero-Trust upload architecture. Clients do not se
 
 ---
 
-## Operational Runbooks
+## Operational Runbooks & Monitoring
 
-### 1. Rotating Client API Keys
+### 1. Monitoring & Alerting
+
+SecureAgents includes built-in CloudWatch Alarms and SNS notifications to ensure high availability:
+
+- **DLQ Alarm:** Fires if any document fails processing 3 times and is moved to the Dead Letter Queue.
+- **Worker Capacity Alarm:** Fires if the SQS queue is backing up faster than the maximum number of workers (5) can process it.
+- **VPC Flow Logs:** All network traffic within the private VPC is logged and encrypted for security auditing.
+
+### 2. Rotating Client API Keys
 
 To rotate a key without downtime:
 
@@ -269,7 +280,7 @@ To rotate a key without downtime:
     This instantly blocks the key at the Edge (`active = false`) and applies a 90-day TTL (`expires_at`), ensuring the hash remains available for security audits before DynamoDB automatically deletes it.
     - _Note: For security, neither the API nor the Worker have permissions to modify this table._
 
-### 2. Handling Stuck Jobs & DLQ
+### 3. Handling Stuck Jobs & DLQ
 
 If a job is stuck in `PROCESSING` for > 15 minutes or fails 3 times, it moves to the `agents-dlq`.
 
@@ -277,29 +288,13 @@ If a job is stuck in `PROCESSING` for > 15 minutes or fails 3 times, it moves to
 - **Reprocess:** Use the AWS Management Console to "Start DLQ redrive" back to the main queue, or manually fix the issue (e.g., Bedrock quota reached) and redrive.
 - **Stuck Jobs:** Check if the worker task crashed. Fargate will automatically restart it, but the job status in DynamoDB might need manual reset to `PENDING_UPLOAD` to allow a retry.
 
-### 3. Scaling Workers Manually
-
-Auto-scaling is based on SQS backlog (5 messages per task). To scale manually:
-
-```bash
-aws ecs update-service --cluster agents-cluster --service agents-worker-service --desired-count 5
-```
-
 ### 4. Tailing Logs
 
-All logs are centralized in CloudWatch.
+All logs are centralized in CloudWatch and encrypted with KMS.
 
 - **API Logs:** `aws logs tail /aws/ecs/agents-api --follow`
 - **Worker Logs:** `aws logs tail /aws/ecs/agents-worker --follow`
 - **Authorizer:** `aws logs tail /aws/lambda/agents-authorizer --follow`
-
-### 5. Clean Teardown
-
-To destroy the stack without leaving orphaned resources:
-
-1.  **Empty S3 Buckets:** `aws s3 rm s3://<BUCKET_NAME> --recursive`
-2.  **Delete ECR Images:** `aws ecr batch-delete-image --repository-name agents-api --image-ids "$(aws ecr list-images --repository-name agents-api --query 'imageIds[*]' --output json)"`
-3.  **Run Terraform:** `terraform destroy` (Note: KMS keys have a 7-30 day deletion window).
 
 ---
 
@@ -307,7 +302,7 @@ To destroy the stack without leaving orphaned resources:
 
 ### Threat Model
 
-- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting and standard security rule sets.
+- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting (Global and Upload-specific) and standard security rule sets.
 - **API Key Theft:** Mitigated by hashing keys in DynamoDB and requiring `X-Origin-Verify` headers to prevent direct Gateway access.
 - **Data Exfiltration:** Mitigated by Zero-Egress VPC design; containers have no path to the public internet.
 - **Unauthorized Data Access:** S3 and DynamoDB policies restrict access strictly to the VPC Endpoints and Task Roles.
@@ -315,10 +310,10 @@ To destroy the stack without leaving orphaned resources:
 ### Data Handling Policy
 
 - **Transient Storage:** Documents are stored in S3 only for the duration of processing.
-- **Implemented Auto-Deletion (30-Day TTL):**
-  - **Jobs Table:** Records expire after 30 days (auto-deleted by DynamoDB TTL).
-  - **API Keys:** Deactivated keys expire after 90 days.
-  - **S3 Storage:** S3 lifecycle policies automatically purge all documents and versions after 30 days.
+- **Implemented Auto-Deletion (TTLs):**
+  - **Jobs Table:** Records expire after **30 days** (auto-deleted by DynamoDB TTL). Note: Jobs that remain in `PENDING_UPLOAD` state are automatically purged after **24 hours**.
+  - **API Keys:** Deactivated keys expire after **90 days**.
+  - **S3 Storage:** S3 lifecycle policies automatically purge all documents and versions after **30 days**.
 
 ### Compliance Posture
 
@@ -363,12 +358,6 @@ SecureAgents is designed to be **HIPAA and SOC 2 ready**. It uses AES-256 encryp
   }
   ```
 
-### Error Codes
-
-- `401 Unauthorized`: Missing/Invalid API Key or bypassed CloudFront.
-- `404 Not Found`: Job ID does not exist or belongs to another client.
-- `429 Too Many Requests`: WAF or API Gateway rate limit exceeded.
-
 ---
 
 ## Testing Documentation
@@ -383,21 +372,6 @@ export S3_BUCKET_NAME=your-bucket
 export DYNAMODB_JOBS_TABLE=agents_Jobs
 uvicorn app.main:app --reload --port 8000
 ```
-
-### Testing the Lambda Authorizer
-
-To test the authorizer without deploying, use the AWS Lambda console with a "Test Event" (JSON version 2.0):
-
-```json
-{
-  "headers": {
-    "x-api-key": "your-raw-key",
-    "x-origin-verify": "your-origin-secret"
-  }
-}
-```
-
-If successful, it should return `{"isAuthorized": true, "context": {"client_id": "..."}}`.
 
 ### End-to-End Test (curl)
 
@@ -421,8 +395,6 @@ curl -H "x-api-key: ak_live_..." https://<CF_URL>/api/v1/jobs/<job_id>
 
 ## Estimated Monthly Costs
 
-We optimized for a "Pay-as-you-Grow" model while maintaining enterprise-grade security.
-
 | Service                | Estimated Cost   | Logic                                                   |
 | :--------------------- | :--------------- | :------------------------------------------------------ |
 | **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.               |
@@ -432,10 +404,6 @@ We optimized for a "Pay-as-you-Grow" model while maintaining enterprise-grade se
 | **Database & Storage** | ~$5              | S3, DynamoDB, SQS (pay-per-request/GB).                 |
 | **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Llama 3 is highly affordable). |
 | **Total Base**         | **~$135 - $185** | Production-grade security for less than $5/day.         |
-
-- **Fargate Scaling:** Max capacity is capped at 5 workers in `scaling.tf` to prevent runaway costs during queue floods.
-- **Billing Alerts:** Configure a CloudWatch Billing Alarm for $200/month (the base cost of the stack).
-- **Per-Job Cost:** Using Llama 3 on Bedrock, the AI cost is ~$0.0001 per document, making the infrastructure base cost the primary driver.
 
 ---
 
