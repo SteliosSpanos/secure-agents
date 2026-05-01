@@ -298,6 +298,48 @@ data "aws_iam_policy_document" "jobs_table_kms_policy" {
   }
 }
 
+// WAF Logs KMS Policy
+
+data "aws_iam_policy_document" "waf_log_kms_policy" {
+  statement {
+    sid    = "KeyAdministrator"
+    effect = "Allow"
+    principals {
+      type        = "AWS"
+      identifiers = ["arn:aws:iam::${data.aws_caller_identity.current.account_id}:root"]
+    }
+    actions   = ["kms:*"]
+    resources = ["*"]
+  }
+
+  statement {
+    sid    = "AllowCloudWatchLogsUSEast1"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logs.us-east-1.amazonaws.com"]
+    }
+    actions = [
+      "kms:Encrypt",
+      "kms:Decrypt",
+      "kms:ReEncrypt*",
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey"
+    ]
+    resources = ["*"]
+    condition { // If the tag matches the ARN of my WAF Log Group
+      test     = "ArnLike"
+      variable = "kms:EncryptionContext:aws:logs:arn"
+      values   = ["arn:aws:logs:us-east-1:${data.aws_caller_identity.current.account_id}:log-group:aws-waf-logs-${var.project_name}*"]
+    }
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+  }
+}
+
 
 
 
