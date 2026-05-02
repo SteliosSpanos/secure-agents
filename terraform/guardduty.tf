@@ -26,7 +26,7 @@ resource "aws_guardduty_detector_feature" "runtime_monitoring" {
   status      = "ENABLED"
 
   additional_configuration {
-    name   = "EKS_ADDON_MONITORING"
+    name   = "EKS_ADDON_MANAGEMENT"
     status = "DISABLED"
   }
 
