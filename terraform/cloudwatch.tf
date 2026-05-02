@@ -87,11 +87,15 @@ resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   }
 }
 
-// SQS Alerts
+// SNS Alerts
 
 resource "aws_sns_topic" "alerts" {
   name              = "${var.project_name}-alerts"
   kms_master_key_id = aws_kms_key.shared.arn
+
+  tags = {
+    Name = "${var.project_name}-security-alerts"
+  }
 }
 
 resource "aws_sns_topic_subscription" "dev_email" {
@@ -99,6 +103,13 @@ resource "aws_sns_topic_subscription" "dev_email" {
   protocol  = "email"
   endpoint  = var.email
 }
+
+resource "aws_sns_topic_policy" "alerts_policy" {
+  arn    = aws_sns_topic.alerts.arn
+  policy = data.aws_iam_policy_document.event_bridge_sns_policy.json
+}
+
+// SQS Alerts
 
 resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
   alarm_name          = "${var.project_name}-dlq-alarm"
@@ -136,4 +147,25 @@ resource "aws_cloudwatch_metric_alarm" "worker_at_max_capacity" {
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// EventBridge for GuardDuty
+
+resource "aws_cloudwatch_event_rule" "guardduty_finding" {
+  name        = "${var.project_name}-guardduty-finding"
+  description = "Triggers when GuardDuty detects a High-Severity threat"
+
+  event_pattern = jsonencode({
+    source      = ["aws.guardduty"]
+    detail-type = ["GuardDuty Finding"]
+    detail = {
+      severity = [{ numeric = [">=", 7] }]
+    }
+  })
+}
+
+resource "aws_cloudwatch_event_target" "sns" {
+  rule      = aws_cloudwatch_event_rule.guardduty_finding.name
+  target_id = "SendToSNS"
+  arn       = aws_sns_topic.alerts.arn
 }

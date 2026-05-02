@@ -229,6 +229,30 @@ data "aws_iam_policy_document" "shared_kms_policy" {
       values   = [aws_s3_bucket.agents.arn]
     }
   }
+
+  statement {
+    sid    = "AllowEventBridgeToUseKey"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey*"
+    ]
+    resources = ["*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.guardduty_finding.arn]
+    }
+  }
 }
 
 // API Keys Table KMS Policy
@@ -629,8 +653,6 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
 
 
 
-
-
 // Lambda (for API Gateway)
 
 data "aws_iam_policy_document" "authorizer_assume_role" {
@@ -667,5 +689,34 @@ data "aws_iam_policy_document" "authorizer_iam_policy" {
       aws_cloudwatch_log_group.authorizer_logs.arn,
       "${aws_cloudwatch_log_group.authorizer_logs.arn}:*"
     ]
+  }
+}
+
+
+
+
+
+// SNS Topic Policy for EventBridge
+
+data "aws_iam_policy_document" "event_bridge_sns_policy" {
+  statement {
+    sid    = "AllowEventBridgeToPublish"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["events.amazonaws.com"]
+    }
+    actions   = ["sns:Publish"]
+    resources = [aws_sns_topic.alerts.arn]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnEquals"
+      variable = "aws:SourceArn"
+      values   = [aws_cloudwatch_event_rule.guardduty_finding.arn]
+    }
   }
 }
