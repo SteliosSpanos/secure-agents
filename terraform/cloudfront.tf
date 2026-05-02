@@ -66,6 +66,11 @@ resource "aws_s3_bucket_acl" "cloudfront_logs" {
   acl        = "log-delivery-write"
 }
 
+resource "aws_s3_bucket_policy" "cloudfront_logs" {
+  bucket = aws_s3_bucket.cloudfront_logs.id
+  policy = data.aws_iam_policy_document.cloudfront_logs_bucket_policy.json
+}
+
 // Cloudfront Distribution
 
 resource "aws_cloudfront_origin_request_policy" "forward_api_key" {
@@ -100,7 +105,7 @@ resource "aws_cloudfront_distribution" "api_dist" {
 
   logging_config {
     include_cookies = false
-    bucket          = aws_s3_bucket.cloudfront_logs.bucket_domain_name
+    bucket          = aws_s3_bucket.cloudfront_logs.bucket_regional_domain_name
     prefix          = "cloudfront/"
   }
 
