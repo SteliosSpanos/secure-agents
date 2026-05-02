@@ -68,7 +68,7 @@ resource "aws_cloudwatch_log_group" "waf_logs" {
   provider          = aws.global
   name              = "aws-waf-logs-${var.project_name}"
   retention_in_days = var.log_retention_days
-  kms_key_id        = aws_kms_key.shared.arn
+  kms_key_id        = aws_kms_key.waf_log.arn
 
   tags = {
     Name = "${var.project_name}-waf-logs"
