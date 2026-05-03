@@ -16,6 +16,24 @@ resource "aws_s3_bucket" "agents" {
   }
 }
 
+// Ownership Controls (Disables ACLs)
+
+resource "aws_s3_bucket_ownership_controls" "agents" {
+  bucket = aws_s3_bucket.agents.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+// Server Access Logging
+
+resource "aws_s3_bucket_logging" "agents" {
+  bucket = aws_s3_bucket.agents.id
+
+  target_bucket = aws_s3_bucket.s3_access_logs.id
+  target_prefix = "agents-access-logs/"
+}
+
 // CORS Configuration
 
 resource "aws_s3_bucket_cors_configuration" "agents" {
@@ -128,4 +146,61 @@ resource "aws_vpc_endpoint" "s3" {
 resource "aws_vpc_endpoint_policy" "s3_policy" {
   vpc_endpoint_id = aws_vpc_endpoint.s3.id
   policy          = data.aws_iam_policy_document.s3_endpoint_policy.json
+}
+
+// S3 Access Logs Bucket
+
+resource "aws_s3_bucket" "s3_access_logs" {
+  bucket        = "${var.project_name}-s3-access-logs-${data.aws_caller_identity.current.account_id}"
+  force_destroy = true
+
+  tags = {
+    Name = "${var.project_name}-s3-access-logs"
+  }
+}
+
+resource "aws_s3_bucket_ownership_controls" "s3_access_logs" {
+  bucket = aws_s3_bucket.s3_access_logs.id
+  rule {
+    object_ownership = "BucketOwnerEnforced"
+  }
+}
+
+resource "aws_s3_bucket_public_access_block" "s3_access_logs" {
+  bucket = aws_s3_bucket.s3_access_logs.id
+
+  block_public_acls       = true
+  block_public_policy     = true
+  ignore_public_acls      = true
+  restrict_public_buckets = true
+}
+
+resource "aws_s3_bucket_server_side_encryption_configuration" "s3_access_logs" {
+  bucket = aws_s3_bucket.s3_access_logs.id
+
+  rule {
+    apply_server_side_encryption_by_default {
+      sse_algorithm = "AES256"
+    }
+  }
+}
+
+resource "aws_s3_bucket_lifecycle_configuration" "s3_access_logs" {
+  bucket = aws_s3_bucket.s3_access_logs.id
+
+  rule {
+    id     = "expire-logs"
+    status = "Enabled"
+
+    filter {}
+
+    expiration {
+      days = 90
+    }
+  }
+}
+
+resource "aws_s3_bucket_policy" "s3_access_logs" {
+  bucket = aws_s3_bucket.s3_access_logs.id
+  policy = data.aws_iam_policy_document.s3_access_logs_policy.json
 }
