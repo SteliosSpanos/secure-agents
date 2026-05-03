@@ -75,3 +75,9 @@ variable "allowed_origins" {
   default     = "http://localhost:3000"
   description = "Allowed origins for CORS"
 }
+
+variable "enable_guardduty" {
+  type        = bool
+  default     = true
+  description = "Whether to enable GuardDuty (disable if you get SubscriptionRequiredException)"
+}
