@@ -152,7 +152,6 @@ resource "aws_cloudwatch_metric_alarm" "worker_at_max_capacity" {
 // EventBridge for GuardDuty
 
 resource "aws_cloudwatch_event_rule" "guardduty_finding" {
-  count       = var.enable_guardduty ? 1 : 0
   name        = "${var.project_name}-guardduty-finding"
   description = "Triggers when GuardDuty detects a High-Severity threat"
 
@@ -166,8 +165,7 @@ resource "aws_cloudwatch_event_rule" "guardduty_finding" {
 }
 
 resource "aws_cloudwatch_event_target" "sns" {
-  count     = var.enable_guardduty ? 1 : 0
-  rule      = aws_cloudwatch_event_rule.guardduty_finding[0].name
+  rule      = aws_cloudwatch_event_rule.guardduty_finding.name
   target_id = "SendToSNS"
   arn       = aws_sns_topic.alerts.arn
 }
