@@ -52,6 +52,73 @@ data "aws_iam_policy_document" "alb_logs_bucket_policy" {
   }
 }
 
+// S3 Cloudfront Logs
+
+data "aws_iam_policy_document" "cloudfront_logs_bucket_policy" {
+  statement {
+    sid    = "DenyNonSSLTransport"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.cloudfront_logs.arn,
+      "${aws_s3_bucket.cloudfront_logs.arn}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+// S3 Access Logs Policy
+
+data "aws_iam_policy_document" "s3_access_logs_policy" {
+  statement {
+    sid    = "AllowS3Logging"
+    effect = "Allow"
+    principals {
+      type        = "Service"
+      identifiers = ["logging.s3.amazonaws.com"]
+    }
+    actions   = ["s3:PutObject"]
+    resources = ["${aws_s3_bucket.s3_access_logs.arn}/*"]
+    condition {
+      test     = "StringEquals"
+      variable = "aws:SourceAccount"
+      values   = [data.aws_caller_identity.current.account_id]
+    }
+    condition {
+      test     = "ArnLike"
+      variable = "aws:SourceArn"
+      values   = [aws_s3_bucket.agents.arn]
+    }
+  }
+
+  statement {
+    sid    = "DenyNonSSLTransport"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions = ["s3:*"]
+    resources = [
+      aws_s3_bucket.s3_access_logs.arn,
+      "${aws_s3_bucket.s3_access_logs.arn}/*"
+    ]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
 
 // S3 Bucket Policy (Main Bucket)
 
@@ -85,8 +152,7 @@ data "aws_iam_policy_document" "s3_bucket_policy" {
     }
     actions = [
       "s3:GetObject",
-      "s3:PutObject",
-      "s3:HeadObject"
+      "s3:PutObject"
     ]
     resources = ["${aws_s3_bucket.agents.arn}/*"]
     condition {
@@ -109,8 +175,7 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
     }
     actions = [
       "s3:GetObject",
-      "s3:PutObject",
-      "s3:HeadObject"
+      "s3:PutObject"
     ]
     resources = [
       aws_s3_bucket.agents.arn,
