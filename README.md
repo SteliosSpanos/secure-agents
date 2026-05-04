@@ -30,19 +30,26 @@ SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillar
 - **Security Group Hardening:** Egress is restricted to only the necessary VPC Endpoints via Prefix Lists, preventing data exfiltration even if a container is compromised.
 - **Resource-Based Policies:** S3 and DynamoDB tables have policies that explicitly `Deny` any traffic that does not originate from the specific VPC Endpoints.
 
-### 2. The "Double-Shield" Ingress
+### 2. The "Double-Shield" Ingress & Audit Trail
 
 - **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Managed Rule Sets) and CloudFront.
+- **Comprehensive Logging:** The system maintains a full audit trail including **WAF Logs** (blocked/allowed requests), **CloudFront Logs** (edge traffic), **ALB Access Logs** (internal traffic), and **S3 Server Access Logs** (every object interaction).
 - **Enhanced Audit Trail:** CloudFront is configured to forward the `X-Forwarded-For` header, and API Gateway access logs are enriched to capture the real client IP for security forensic analysis.
 - **Native Header Validation:** API Gateway performs native `identity_source` checks for both the API Key and the `X-Origin-Verify` secret, rejecting unauthorized direct traffic before it even invokes the Lambda Authorizer.
 - **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link. This means the ALB has no public DNS or IP address.
 
-### 3. Application Resilience & Security
+### 3. Application Resilience & S3 Hardening
 
+- **S3 Bucket Hardening:** All buckets use **BucketOwnerEnforced** ownership controls, effectively disabling ACLs and ensuring all objects are owned by the account.
 - **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM. This prevents Out-Of-Memory (OOM) attacks.
 - **Size & Content Limits:** The system enforces a strict maximum file size (default 10MB) and truncates extracted text to prevent LLM context window overflows and "token-bomb" cost attacks.
 - **Graceful Shutdown (SIGTERM):** Workers are programmed to rescue active jobs during Fargate scale-in events. If a worker receives a SIGTERM, it attempts to revert the job state to `PENDING_UPLOAD` and release the SQS message before exiting.
 - **KMS Managed Keys:** Every service (S3, DynamoDB, SQS, ECR, CloudWatch) uses Customer Managed Keys (CMKs) for AES-256 encryption.
+
+### 4. Proactive Threat Detection (GuardDuty)
+
+- **Runtime Monitoring:** Amazon GuardDuty is enabled with **ECS Fargate Runtime Monitoring**, allowing for the detection of suspicious process-level activity within containers (e.g., crypto-mining, shell-injection).
+- **S3 Data Protection:** GuardDuty monitors S3 data plane events (GetObject, ListObjects) to identify unusual access patterns or potential data exfiltration attempts.
 
 ---
 
@@ -261,6 +268,8 @@ This API uses an asynchronous, Zero-Trust upload architecture. Clients do not se
 
 SecureAgents includes built-in CloudWatch Alarms and SNS notifications to ensure high availability:
 
+- **Container Insights:** ECS Cluster has Container Insights enabled, providing deep visibility into CPU, memory, and network usage per service and task.
+- **GuardDuty Findings:** High-severity GuardDuty findings (e.g., unauthorized access attempts) should be reviewed immediately in the AWS Console.
 - **DLQ Alarm:** Fires if any document fails processing 3 times and is moved to the Dead Letter Queue.
 - **Worker Capacity Alarm:** Fires if the SQS queue is backing up faster than the maximum number of workers (5) can process it.
 - **VPC Flow Logs:** All network traffic within the private VPC is logged and encrypted for security auditing.
@@ -306,6 +315,7 @@ All logs are centralized in CloudWatch and encrypted with KMS.
 - **API Key Theft:** Mitigated by hashing keys in DynamoDB and requiring `X-Origin-Verify` headers to prevent direct Gateway access.
 - **Data Exfiltration:** Mitigated by Zero-Egress VPC design; containers have no path to the public internet.
 - **Unauthorized Data Access:** S3 and DynamoDB policies restrict access strictly to the VPC Endpoints and Task Roles.
+- **Malicious Behavior:** GuardDuty monitors for suspicious runtime behavior and unauthorized S3 data access patterns.
 
 ### Data Handling Policy
 
@@ -314,6 +324,8 @@ All logs are centralized in CloudWatch and encrypted with KMS.
   - **Jobs Table:** Records expire after **30 days** (auto-deleted by DynamoDB TTL). Note: Jobs that remain in `PENDING_UPLOAD` state are automatically purged after **24 hours**.
   - **API Keys:** Deactivated keys expire after **90 days**.
   - **S3 Storage:** S3 lifecycle policies automatically purge all documents and versions after **30 days**.
+  - **Audit Logs:** **CloudFront**, **WAF**, **ALB Access Logs**, and **S3 Server Access Logs** are automatically purged after **90 days**.
+  - **Application Logs:** CloudWatch logs are retained according to the `log_retention_days` variable (default **30 days**).
 
 ### Compliance Posture
 
