@@ -1,6 +1,9 @@
 /*
-    Network Architecture: 1 VPC, 2 private subnets(multi-AZ)
-    with 1 private route table, VPC Flow Logs and VPC Endpoints
+  Network Architecture:
+  - 1 VPC
+  - 2 private subnets(multi-AZ)
+  - 1 private route table
+  - VPC Endpoints (Interfaces needed for Fargate)
 */
 
 // VPC 
@@ -60,7 +63,6 @@ resource "aws_route_table_association" "agents_private_assoc_2" {
 }
 
 // These endpoints cover the 'hidden' dependencies required for Fargate
-// 1. ECR, 2. Logs, 3. KMS, 4. SQS, 5. Bedrock
 
 locals {
   services = [
@@ -70,7 +72,9 @@ locals {
     "sqs",
     "kms",
     "sts",
-    "bedrock-runtime"
+    "bedrock-runtime",
+    "ecs-agent",    // Required for GuardDuty ECS_FARGATE_MANAGEMENT
+    "ecs-telemetry" // Required for GuardDuty ECS_FARGATE_MANAGEMNT
   ]
 }
 
