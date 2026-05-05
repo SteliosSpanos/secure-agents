@@ -1,5 +1,11 @@
 /*
-    Security groups for VPC Link, ALB and Compute
+  Security Groups:
+  - VPC Link (ingress: HTTP from APIGW | egress: ALB)
+  - ALB (ingress: HTTP from VPC Link | egress: Fargate containers)
+  - Fargate API (ingress: HTTP from ALB | egress: HTTPS to VPC Endpoints)
+  - Fargate Workers (egress: HTTPS to VPC Endpoints)
+  - VPC Endpoints (ingress: HTTPS from Fargate API and Workers)
+  - Lambda Authorizer (egress: HTTPS only to DynamoDB Endpoint)
 */
 
 // VPC Link
@@ -65,14 +71,13 @@ resource "aws_security_group" "fargate_api_sg" {
     security_groups = [aws_security_group.alb_sg.id]
   }
 
-  egress {
-    // AWS SDK communicate ove HTTPS
-    description = "Allow HTTPS out to VPC endpoints, S3, and DynamoDB"
+  egress { // AWS SDK communicates over HTTPS
+    description = "Allow HTTPS out to VPC endpoints"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
-    prefix_list_ids = [
+    cidr_blocks = [aws_vpc.agents_vpc.cidr_block] // Covers Interface Endpoints
+    prefix_list_ids = [                           // Covers Gateway Endpoints
       data.aws_prefix_list.s3.id,
       data.aws_prefix_list.dynamodb.id
     ]
@@ -87,7 +92,7 @@ resource "aws_security_group" "fargate_worker_sg" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   egress {
-    description = "Allow HTTPS out to VPC Endpoints, S3, and DynamoDB"
+    description = "Allow HTTPS out to VPC Endpoints"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
@@ -130,6 +135,7 @@ resource "aws_security_group" "authorizer_lambda_sg" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   egress {
+    description     = "Allow HTTPS egress to DynamoDB via Gateway Endpoint"
     from_port       = 443
     to_port         = 443
     protocol        = "tcp"
