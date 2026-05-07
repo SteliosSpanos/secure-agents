@@ -1,11 +1,11 @@
 /*
-  Security Groups:
-  - VPC Link (ingress: HTTP from APIGW | egress: ALB)
-  - ALB (ingress: HTTP from VPC Link | egress: Fargate containers)
-  - Fargate API (ingress: HTTP from ALB | egress: HTTPS to VPC Endpoints)
-  - Fargate Workers (egress: HTTPS to VPC Endpoints)
-  - VPC Endpoints (ingress: HTTPS from Fargate API and Workers)
-  - Lambda Authorizer (egress: HTTPS only to DynamoDB Endpoint)
+    Security Groups:
+    - VPC Link (ingress: HTTP from APIGW | egress: ALB)
+    - ALB (ingress: HTTP from VPC Link | egress: Fargate containers)
+    - Fargate API (ingress: HTTP from ALB | egress: HTTPS to VPC Endpoints)
+    - Fargate Workers (egress: HTTPS to VPC Endpoints)
+    - VPC Endpoints (ingress: HTTPS from Fargate API and Workers)
+    - Lambda Authorizer (egress: HTTPS only to DynamoDB Endpoint)
 */
 
 // VPC Link
