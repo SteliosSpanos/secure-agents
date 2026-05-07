@@ -45,8 +45,8 @@ def get_client_id(x_client_id: str = Header(None, alias="x-client-id")) -> str:
     return x_client_id
 
 
-
 # Routes
+
 
 @app.get("/health")
 def health_check():
