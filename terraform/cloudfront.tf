@@ -1,5 +1,7 @@
 /*
-    Cloudfront distribution that sits in front of the API Gateway
+    Cloudfront sits in front of the API Gateway:
+    - Lives in the global region (us-east-1) since Cloudfront is a global service.
+
 */
 
 resource "random_password" "origin_secret" {
@@ -7,7 +9,7 @@ resource "random_password" "origin_secret" {
   special = true
 }
 
-// Cloudfront Logs
+// Cloudfront Logs Bucket
 
 resource "aws_s3_bucket" "cloudfront_logs" {
   bucket        = "${var.project_name}-cloudfront-logs-${data.aws_caller_identity.current.account_id}"
@@ -87,7 +89,7 @@ resource "aws_cloudfront_origin_request_policy" "forward_api_key" {
       items = [
         "x-api-key",
         "X-Forwarded-For",
-        "CloudFront-Viewer-Address"
+        "CloudFront-Viewer-Address" // It allows us to see the original client IP in WAF logs, which is crucial for security monitoring.
       ]
     }
   }
@@ -121,7 +123,7 @@ resource "aws_cloudfront_distribution" "api_dist" {
     }
 
     custom_header {
-      name  = "X-Origin-Verify"
+      name  = "X-Origin-Verify" // Custom header to verify requests are from Cloudfront
       value = random_password.origin_secret.result
     }
   }
@@ -131,10 +133,10 @@ resource "aws_cloudfront_distribution" "api_dist" {
     cached_methods   = ["GET", "HEAD"]
     target_origin_id = "APIGateway"
 
-    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id
+    cache_policy_id          = data.aws_cloudfront_cache_policy.caching_disabled.id // We don't want Cloudfront to cache API responses
     origin_request_policy_id = aws_cloudfront_origin_request_policy.forward_api_key.id
 
-    viewer_protocol_policy = "redirect-to-https"
+    viewer_protocol_policy = "redirect-to-https" // If someone tries to access via HTTP it redirects to HTTPS
   }
 
   restrictions {
