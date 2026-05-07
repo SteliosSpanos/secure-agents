@@ -1,5 +1,10 @@
 /*
-    The Web Application Firewall (WAF) that is attached in front of Cloudfront
+    The Web Application Firewall (WAF) is attached in front of Cloudfront:
+    - Global Rate Limit: Blocks IPs that exceed 500 requests in 5 minutes.
+    - Upload Rate Limit: Blocks IPs that exceed 100 requests to /api/v1
+    - AWS Managed Rules: Protects against common threats like SQLi and XSS.
+    - Logging: All WAF events are logged to CloudWatch for monitoring and analysis.
+    - Lives in the global region since Cloudfront is a global service (us-east-1).
 */
 
 resource "aws_wafv2_web_acl" "api_waf" {
