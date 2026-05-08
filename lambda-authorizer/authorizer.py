@@ -23,7 +23,7 @@ aws_config = Config(
 )
 
 
-# Handling Database and TCP connections outside of the handler for reduced latecny from cold starts
+# Handling Database and TCP connections outside of the handler for reduced latency of cold starts
 dynamodb = boto3.resource("dynamodb", config=aws_config)
 table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys")  # From terraform
 api_keys_table = dynamodb.Table(table_name)
@@ -57,7 +57,7 @@ def lambda_handler(event, context):
 
     try:
         response = api_keys_table.get_item(
-            Key={"api_key": hashed_key}, ConsistentRead=True
+            Key={"api_key": hashed_key}, ConsistentRead=True # Consistent read means we get the latest data from DynamoDB, not a potentially stale cached version
         )
         item = response.get("Item")
 
