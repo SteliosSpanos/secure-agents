@@ -1,6 +1,11 @@
 /*
     Cloudfront sits in front of the API Gateway:
     - Lives in the global region (us-east-1) since Cloudfront is a global service.
+    - Uses headers: x-api-key for API key forwarding, X-Forwarded-For to validated the request and CloudFront-Viewer-Address for client IP visibility in WAF.
+    - Creates headers: x-origin-verify to ensure requests are coming from our Cloudfront distribution.
+    - Logging: All requests and responses are logged to a dedicated S3 bucket with strict access controls.
+    - Security: Enforces HTTPS and integrates with WAF for protection against common web threats.
+    - Caching: Disabled for API responses to ensure clients always get fresh data.
 
 */
 
@@ -123,7 +128,7 @@ resource "aws_cloudfront_distribution" "api_dist" {
     }
 
     custom_header {
-      name  = "X-Origin-Verify" // Custom header to verify requests are from Cloudfront
+      name  = "x-origin-verify" // Custom header to verify requests are from Cloudfront
       value = random_password.origin_secret.result
     }
   }

@@ -85,6 +85,7 @@ data "archive_file" "authorizer_zip" {
 // Lambda Function
 
 resource "aws_lambda_function" "authorizer" {
+  description      = "Lambda Authorizer for API Gateway to verify API Keys and Origin Secret"
   filename         = data.archive_file.authorizer_zip.output_path
   source_code_hash = data.archive_file.authorizer_zip.output_base64sha256
   function_name    = "${var.project_name}-authorizer"
