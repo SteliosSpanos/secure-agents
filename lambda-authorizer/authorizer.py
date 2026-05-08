@@ -57,7 +57,8 @@ def lambda_handler(event, context):
 
     try:
         response = api_keys_table.get_item(
-            Key={"api_key": hashed_key}, ConsistentRead=True # Consistent read means we get the latest data from DynamoDB, not a potentially stale cached version
+            Key={"api_key": hashed_key},
+            ConsistentRead=True,  # Consistent read means we get the latest data from DynamoDB, not a potentially stale cached version
         )
         item = response.get("Item")
 
