@@ -1,5 +1,9 @@
 /*
-    API Gateway with VPC link to the ALB and the Lambda
+    API Gateway with VPC link to the ALB and the Lambda:
+    - The VPC Link securely connects API Gateway to the internal ALB.
+    - The Lambda doesnt activate if the headers x-api-key and x-origin-verify are missing, which prevents unnecessary Lambda invocations.
+    - The Lambda Authorizer verifies API keys and a custom origin secret before allowing requests to reach the ALB.
+    - The API Gateway creates the header x-client-id with the client_id returned by the Lambda Authorizer.
 */
 
 // VPC Link
