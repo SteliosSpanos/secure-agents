@@ -1,5 +1,8 @@
 /*
-    Auto scaling for the Fargate worker service based on SQS backlog
+    Auto scaling for the Fargate worker service based on SQS backlog:
+    - Local variables define the min/max capacity, target value for scaling, and cooldown periods
+    - The custom metric calculates the backlog per task as (visible messages + inflight messages) / number of running tasks
+    - This allows the worker service to automatically scale out when there are more messages waiting than the target threshold
 */
 
 locals {
