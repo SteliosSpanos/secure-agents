@@ -1,6 +1,10 @@
 /*
-    DynamoDB tables compatible with the FastAPI app (agents_Jobs, agents_APIKeys)
-    and the policies
+  DynamoDB Tables:
+  - API Keys Table: Stores API keys with TTL for expiration and encryption at rest
+  - Jobs Table: Stores job information with a composite primary key (client_id, job_id), TTL for cleanup, and encryption at rest
+  - Both have point-in-time recovery enabled for data protection
+  - A resource policy is attached to the Jobs table to restrict access to the VPC endpoint
+  - A VPC endpoint is created for DynamoDB
 */
 
 // API Keys Table
