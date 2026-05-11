@@ -54,16 +54,25 @@ except Exception:
 
 # Service functions
 
-
-def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dict:
-    """Generates a secure S3 presigned URL (acts as a ticket)"""
+def build_object_key(client_id: str, job_id: str, filename: str) -> str:
+    """Validates the filename and returns the canonical S3 object key"""
     safe_name = re.sub(r"[^a-zA-Z0-9.\-_]", "_", filename)
-    if not safe_name.lower().endswith(".pdf"):
+
+    if not safe_name.lower().endswith("pdf"):
         logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
         raise UserInputError("Only .pdf files are allowed.")
 
-    object_key = f"{client_id}/uploads/{job_id}/{safe_name}"
+    stem = safe_name.rsplit(".", 1)[0]
+    if len(stem) < 1:
+        logger.warning(f"Client {client_id} supplied an invalid filename: {filename}")
+        raise UserInputError("Invalid filename.")
 
+    return f"{client_id}/uploads/{job_id}/{safe_name}"
+
+
+
+def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dict:
+    """Generates a secure S3 presigned URL (acts as a ticket)"""
     try:
         response = s3_client.generate_presigned_post(
             Bucket=settings.s3_bucket_name,
@@ -94,6 +103,9 @@ def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dic
     except (ClientError, BotoCoreError) as e:
         logger.exception("Failed to sign S3 request.")
         raise AWSStorageError("Failed to generate secure upload tunnel.") from e
+    except Exception as e:
+        logger.exception("Unexpected error during presigned URL generation.")
+        raise RuntimeError("An unexpected error occurred while generating the upload URL.") from e
 
 
 def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
@@ -114,6 +126,9 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
     except (ClientError, BotoCoreError) as e:
         logger.exception("Failed to fetch job status.")
         raise AWSDatabaseError("Database unreachable.") from e
+    except Exception as e:
+        logger.exception("Unexpected error during job status retrieval.")
+        raise RuntimeError("An unexpected error occurred while retrieving job status.") from e
 
 
 def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
@@ -134,6 +149,15 @@ def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
             },
             ConditionExpression="attribute_not_exists(client_id) AND attribute_not_exists(job_id)",
         )
-    except (ClientError, BotoCoreError) as e:
-        logger.exception("Job logging failed.")
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException": # A record with this job_id already exists, which should never happen since we use UUIDs.  
+            logger.exception(f"Job record for client {client_id}, job {job_id} already exists.")
+            raise AWSDatabaseError("Job ID collision detected.") from e
+        logger.exception("Failed to initialize job record in DynamoDB.")
         raise AWSDatabaseError("Failed to initialize job record.") from e
+    except BotoCoreError as e:
+        logger.exception("Job record initialization failed due to AWS service error.")
+        raise AWSDatabaseError("AWS service error during job record initialization.") from e
+    except Exception as e: 
+        logger.exception("Unexpected error during job record initialization.")
+        raise RuntimeError("An unexpected error occurred while initializing the job record.") from e

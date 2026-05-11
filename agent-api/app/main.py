@@ -35,11 +35,18 @@ app.add_middleware(
 
 
 def get_client_id(x_client_id: str = Header(None, alias="x-client-id")) -> str:
-    if not x_client_id:
+    if not x_client_id or not x_client_id.strip():
         logger.error("Request reached Fargate without Gateway context.")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail="Missing secure context from API Gateway",
+        )
+
+    if len(x_client_id) > 128 or not re.match(r"^[a-zA-Z0-9_\-]+$", x_client_id):
+        logger.warning(f"Rejected malformed x-client-id header: {x_client_id}.")
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid client context"
         )
 
     return x_client_id
@@ -65,9 +72,27 @@ def request_upload(
     job_id = str(uuid.uuid4())
     logger.info(f"Generating secure upload slot for client {client_id}, job {job_id}")
 
+    # Step 1 - Validate filename and generate S3 object key
+    try:
+        object_key = aws_client.build_object_key(client_id, job_id, filename)
+    except aws_client.UserInputError as e:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=str(e)
+        )
+
+    # Step 2 - Persist the job record before generating the presigned URL to ensure we don't create upload slots for invalid jobs.
+    try:
+        aws_client.init_job_record(client_id, job_id, object_key)
+    except aws_client.AWSDatabaseError:
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Could not initialize job record.",
+        )
+
+    # Step 3 - Generate the presigned URL for secure upload
     try:
         upload_data = aws_client.generate_presigned_upload(client_id, job_id, filename)
-        aws_client.init_job_record(client_id, job_id, upload_data["object_key"])
     except aws_client.UserInputError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except (aws_client.AWSDatabaseError, aws_client.AWSStorageError):
@@ -85,7 +110,7 @@ def request_upload(
 
 
 @app.get("/api/v1/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job_status(job_id: str, client_id: str = Depends(get_client_id)):
+def get_job_status(job_id: UUID, client_id: str = Depends(get_client_id)):
     """Securely check the status of a document processing job"""
     try:
         status_info = aws_client.get_job_status(client_id, job_id)
