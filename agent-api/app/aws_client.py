@@ -71,7 +71,7 @@ def build_object_key(client_id: str, job_id: str, filename: str) -> str:
     return f"{client_id}/uploads/{job_id}/{safe_name}"
 
 
-def generate_presigned_upload(client_id: str, job_id: str, filename: str) -> Dict:
+def generate_presigned_upload(client_id: str, job_id: str, object_key: str) -> Dict:
     """Generates a secure S3 presigned URL (acts as a ticket)"""
     try:
         response = s3_client.generate_presigned_post(
