@@ -1,7 +1,15 @@
 /*
-    The SQS configuration that stores S3 event notifications for
-    the agent worker to wake up.
-    Also the Dead Letter Queue that messaged go after 3 failed tries.
+  Main SQS Queue:
+  - waits for S3 event notifications when a new PDF is uploaded
+  - has a long polling configuration to reduce costs
+  - has a visibility timeout of 10 minutes to allow for AI processing
+  - is encrypted with a KMS key for security
+  - has a redrive policy to move failed messages to a Dead Letter Queue (DLQ) after 3 attempts
+
+  Dead Letter Queue (DLQ):
+  - stores messages that failed processing in the main queue after 3 attempts
+  - has a retention period of 14 days (max allowed by SQS)
+  - is encrypted with the same KMS key for consistency
 */
 
 // Dead Letter Queue

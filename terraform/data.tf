@@ -695,6 +695,10 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
     }
   }
 
+  /*
+
+  We dont need this statement becuase we already granted the Agent Task Role the permissions
+
   statement {
     sid    = "AllowComputeUsage"
     effect = "Allow"
@@ -709,7 +713,7 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
       "sqs:ChangeMessageVisibility"
     ]
     resources = [aws_sqs_queue.agent_queue.arn]
-  }
+  }*/
 }
 
 
