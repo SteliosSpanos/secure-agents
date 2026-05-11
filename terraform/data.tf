@@ -188,7 +188,6 @@ data "aws_iam_policy_document" "s3_endpoint_policy" {
     }
   }
 
-  # This is CRITICAL for ECR to work in a private VPC with a Gateway endpoint
   # ECR stores image layers in AWS-managed S3 buckets.
   statement {
     sid    = "AllowECRLayerPull"

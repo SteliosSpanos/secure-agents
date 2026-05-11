@@ -1,6 +1,13 @@
 /*
-    The S3 bucket accessed by the API and the agent.
-    The access to the bucket follows the bucket policies and has server side encryption.
+  Main S3 Bucket:
+  - Ownership Controls: Enforce bucket owner ownership to disable ACLs.
+  - Server Access Logging: Log access to a separate bucket.
+  - CORS Configuration: Allows specific origins and headers for cross-origin requests
+  - Versioning for data protection
+  - Public Access Block: Restrict public access to the bucket
+  - Lifecycle Configuration
+  - Server-Side Encryption with AWS KMS for encryption at rest
+  - VPC endpoint for private connectivity to S3
 */
 
 resource "aws_s3_bucket" "agents" {
@@ -147,6 +154,11 @@ resource "aws_vpc_endpoint_policy" "s3_policy" {
   vpc_endpoint_id = aws_vpc_endpoint.s3.id
   policy          = data.aws_iam_policy_document.s3_endpoint_policy.json
 }
+
+
+
+
+
 
 // S3 Access Logs Bucket
 
