@@ -1,4 +1,6 @@
 import uuid
+import re
+from uuid import UUID
 import logging
 from fastapi import FastAPI, HTTPException, status, Depends, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
@@ -45,8 +47,7 @@ def get_client_id(x_client_id: str = Header(None, alias="x-client-id")) -> str:
     if len(x_client_id) > 128 or not re.match(r"^[a-zA-Z0-9_\-]+$", x_client_id):
         logger.warning(f"Rejected malformed x-client-id header: {x_client_id}.")
         raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="Invalid client context"
+            status_code=status.HTTP_400_BAD_REQUEST, detail="Invalid client context"
         )
 
     return x_client_id
@@ -76,10 +77,7 @@ def request_upload(
     try:
         object_key = aws_client.build_object_key(client_id, job_id, filename)
     except aws_client.UserInputError as e:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=str(e)
-        )
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
     # Step 2 - Persist the job record before generating the presigned URL to ensure we don't create upload slots for invalid jobs.
     try:
