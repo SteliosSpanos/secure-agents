@@ -61,6 +61,7 @@ graph TD
   classDef orange fill:#fff5e6,stroke:#ff9900,stroke-width:2px,color:#000;
   classDef purple fill:#f2e6ff,stroke:#8c33ff,stroke-width:2px,color:#000;
   classDef blue fill:#e6f3ff,stroke:#0073bb,stroke-width:2px,color:#000;
+  classDef grey fill:#f9f9f9,stroke:#666,stroke-dasharray: 5 5,color:#000;
 
   linkStyle default stroke:#000000,stroke-width:2px,fill:none;
 
@@ -70,7 +71,7 @@ graph TD
   class PublicInternet orange;
 
   subgraph AWSCloud["AWS Cloud (eu-central-1)"]
-    WAF["AWS WAF (L7 Protection)"]
+    WAF["AWS WAF (Global & Upload Rate Limits)"]
     CloudFront["CloudFront Distribution"]
 
     subgraph APIGatewayChain["API Gateway Entry"]
@@ -78,7 +79,7 @@ graph TD
       IdentityCheck["Identity Source Validation<br>(Checks x-api-key + x-origin-verify)"]
     end
 
-    subgraph RegionalServices["Regional Services (Encrypted)"]
+    subgraph RegionalServices["Regional Services (Encrypted + PITR)"]
       S3[("S3: Document Storage")]
 
       subgraph DynamoDB["DynamoDB (Regional)"]
@@ -90,10 +91,16 @@ graph TD
         KmsAuth[("Key: Auth")]
         KmsShared[("Key: Shared")]
         KmsJobs[("Key: Jobs Table")]
+        KmsWaf[("Key: WAF Logs")]
       end
 
       MainQueue[("SQS: Work Queue")]
       BedrockInference["Bedrock Runtime<br>(Llama 3)"]
+      
+      subgraph Alerting["Monitoring & Alerts"]
+        SNS["SNS: Security Alerts"]
+        EventBridge["EventBridge: GuardDuty Findings"]
+      end
     end
     class RegionalServices purple;
 
@@ -107,17 +114,32 @@ graph TD
         EndpointS3["Gateway: S3"]
         EndpointKMS["Interface: KMS"]
         EndpointBedrock["Interface: Bedrock"]
+        EndpointECR["Interface: ECR (API/DKR)"]
+        EndpointLogs["Interface: CloudWatch Logs"]
+        EndpointSTS["Interface: STS"]
+        EndpointGuardDuty["Interface: ECS-Agent/Telemetry"]
       end
       class VpcEndpoints blue;
 
       subgraph PrivateSubnets["Compute (Private Subnets)"]
         Authorizer["Lambda Authorizer"]
         ApiService[["Fargate: FastAPI"]]
-        WorkerService[["Fargate: AI Worker"]]
+        WorkerService[["Fargate: AI Worker<br>(Graceful SIGTERM)"]]
       end
       class PrivateSubnets blue;
+
+      FlowLogs[("VPC Flow Logs")]
     end
     class VPC purple;
+
+    subgraph AuditLogs["Audit & Diagnostic Logging (90-day Retention)"]
+      S3AccessLogs[("S3 Access Logs")]
+      CloudFrontLogs[("CloudFront Logs")]
+      ALBAccessLogs[("ALB Access Logs")]
+      WAFLogs[("WAF Logs (CloudWatch)")]
+      APIGWLogs[("APIGW Logs (CloudWatch)")]
+    end
+    class AuditLogs grey;
   end
   class AWSCloud orange;
 
@@ -153,6 +175,18 @@ graph TD
   WorkerService -- "15. Inference" --> EndpointBedrock
   EndpointBedrock -.-> BedrockInference
   WorkerService -- "16. Update Status" --> EndpointDynamoDB
+
+  %% Logging Links
+  S3 -.-> S3AccessLogs
+  CloudFront -.-> CloudFrontLogs
+  InternalALB -.-> ALBAccessLogs
+  WAF -.-> WAFLogs
+  APIGW -.-> APIGWLogs
+  VPC -.-> FlowLogs
+
+  %% Alerting Links
+  EventBridge -- "High Severity" --> SNS
+  MainQueue -- "DLQ/Capacity Alarms" --> SNS
 ```
 
 ### Key Architectural Decisions (ADRs)
@@ -160,9 +194,10 @@ graph TD
 1.  **WAF & CloudFront (Edge Defense):**
     - **Decision:** Use AWS WAF attached to CloudFront with a custom `X-Origin-Verify` header requirement at the API Gateway.
     - **Why?** Protects against DDoS and common web exploits (SQLi, XSS) before traffic reaches our infrastructure. The custom header ensures that users cannot bypass the WAF by hitting the API Gateway endpoint directly.
+    - **Rate Limiting:** Enforces a global limit of 500 requests per 5 minutes and a stricter 100 requests per 5 minutes for the `/api/v1/request-upload` endpoint to prevent cost-bombing.
 2.  **API Gateway + Internal ALB (The Double Shield):**
-    - **Decision:** Split public ingress from private compute using a VPC Link.
-    - **Why?** Ensures our application servers have **no public IP addresses**. They live in strictly private subnets, accessible only through the API Gateway.
+    - **Decision:** Split public ingress from private compute using a VPC Link and a cryptographically generated origin secret.
+    - **Why?** Ensures our application servers have **no public IP addresses**. The random 32-character `X-Origin-Verify` secret prevents unauthorized direct access to the API Gateway.
 3.  **On-Demand Compute (Scale-to-Zero):**
     - **Decision:** Fargate for both API and Worker nodes, with a specific focus on **scaling the Worker to zero**.
     - **Why?** PDF processing and LLM orchestration are bursty. The Worker service maintains a `min_capacity = 0`, automatically spinning up when the SQS backlog exceeds 5 messages per task and scaling back to zero when idle. This eliminates idle compute costs while ensuring 24/7 availability.
@@ -172,6 +207,9 @@ graph TD
 5.  **SQS Standard vs. FIFO:**
     - **Decision:** SQS Standard Queue.
     - **Why?** For document processing, absolute ordering isn't required, but high throughput and "at-least-once" delivery are critical. FIFO adds complexity and cost that aren't justified for this use case.
+6.  **Immutable Images & Scanning (ECR):**
+    - **Decision:** Use ECR with Immutable tags and automated image scanning.
+    - **Why?** Prevents tag-overwriting (ensuring traceability) and automatically identifies vulnerabilities in container dependencies on every push.
 
 ---
 
@@ -211,7 +249,7 @@ This project uses a highly secure, isolated remote state. Deployment is a two-ph
 ### First-Run Expectations (The ECR Hack)
 
 > ** Note on Initial Deployment:**
-> To allow Terraform to deploy ECS and ECR in a single click, the initial `terraform apply` pushes a 0-byte "dummy" image to the registries.
+> To allow Terraform to deploy ECS and ECR in a single click, the initial `terraform apply` pushes a 0-byte "dummy" image to the registries using a `null_resource` and local Docker execution.
 >
 > Immediately after your first deployment, your ECS tasks will briefly enter a "CrashLoopBackOff" state. **This is expected and completely fine.** Once your GitHub Actions CI/CD pipeline runs and pushes the real Python application code, ECS will automatically recover and spin up healthy containers.
 
@@ -222,7 +260,7 @@ This project uses a highly secure, isolated remote state. Deployment is a two-ph
 The project includes a production-ready CI/CD pipeline in `.github/workflows/actions.yml`:
 
 1.  **Code Quality:** Automatically runs `ruff` to check formatting and linting rules.
-2.  **Deployment:** On merge to `main`, builds Docker images for both API and Worker, pushes them to ECR, and triggers an ECS rolling update.
+2.  **Deployment:** On merge to `main`, builds Docker images for both API and Worker, pushes them to ECR using the GitHub SHA as a unique tag, and triggers an ECS rolling update.
 3.  **Security:** Uses OIDC (OpenID Connect) for AWS authentication—no static long-lived AWS keys are stored in GitHub Secrets.
 
 _Note: To use the CI/CD, you must update the IAM Role ARN in `actions.yml` to match the one generated by `terraform/iam_github.tf`._
@@ -269,10 +307,10 @@ This API uses an asynchronous, Zero-Trust upload architecture. Clients do not se
 SecureAgents includes built-in CloudWatch Alarms and SNS notifications to ensure high availability:
 
 - **Container Insights:** ECS Cluster has Container Insights enabled, providing deep visibility into CPU, memory, and network usage per service and task.
-- **GuardDuty Findings:** High-severity GuardDuty findings (e.g., unauthorized access attempts) should be reviewed immediately in the AWS Console.
+- **GuardDuty Findings:** High-severity GuardDuty findings (severity >= 7) are automatically routed via EventBridge to an SNS topic for immediate developer notification.
 - **DLQ Alarm:** Fires if any document fails processing 3 times and is moved to the Dead Letter Queue.
 - **Worker Capacity Alarm:** Fires if the SQS queue is backing up faster than the maximum number of workers (5) can process it.
-- **VPC Flow Logs:** All network traffic within the private VPC is logged and encrypted for security auditing.
+- **VPC Flow Logs:** All network traffic within the private VPC is logged and encrypted with KMS for security auditing.
 
 ### 2. Rotating Client API Keys
 
@@ -311,7 +349,7 @@ All logs are centralized in CloudWatch and encrypted with KMS.
 
 ### Threat Model
 
-- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting (Global and Upload-specific) and standard security rule sets.
+- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting (Global 500/5m and Upload-specific 100/5m) and standard security rule sets.
 - **API Key Theft:** Mitigated by hashing keys in DynamoDB and requiring `X-Origin-Verify` headers to prevent direct Gateway access.
 - **Data Exfiltration:** Mitigated by Zero-Egress VPC design; containers have no path to the public internet.
 - **Unauthorized Data Access:** S3 and DynamoDB policies restrict access strictly to the VPC Endpoints and Task Roles.
@@ -324,8 +362,9 @@ All logs are centralized in CloudWatch and encrypted with KMS.
   - **Jobs Table:** Records expire after **30 days** (auto-deleted by DynamoDB TTL). Note: Jobs that remain in `PENDING_UPLOAD` state are automatically purged after **24 hours**.
   - **API Keys:** Deactivated keys expire after **90 days**.
   - **S3 Storage:** S3 lifecycle policies automatically purge all documents and versions after **30 days**.
-  - **Audit Logs:** **CloudFront**, **WAF**, **ALB Access Logs**, and **S3 Server Access Logs** are automatically purged after **90 days**.
-  - **Application Logs:** CloudWatch logs are retained according to the `log_retention_days` variable (default **30 days**).
+  - **Audit Logs:** **CloudFront**, **ALB Access Logs**, and **S3 Server Access Logs** are automatically purged after **90 days**.
+  - **CloudWatch Logs:** Application and system logs are retained for **30 days** (configurable via `log_retention_days`).
+- **Data Reliability:** **Point-In-Time Recovery (PITR)** is enabled for all DynamoDB tables, allowing for recovery to any second in the last 35 days.
 
 ### Compliance Posture
 
@@ -407,15 +446,15 @@ curl -H "x-api-key: ak_live_..." https://<CF_URL>/api/v1/jobs/<job_id>
 
 ## Estimated Monthly Costs
 
-| Service                | Estimated Cost   | Logic                                                   |
-| :--------------------- | :--------------- | :------------------------------------------------------ |
-| **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.               |
-| **VPC Endpoints**      | ~$75 - $100      | S3, SQS, KMS, Bedrock, ECR. Replaces NAT Gateway costs. |
-| **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0). |
-| **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.           |
-| **Database & Storage** | ~$5              | S3, DynamoDB, SQS (pay-per-request/GB).                 |
-| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Llama 3 is highly affordable). |
-| **Total Base**         | **~$135 - $185** | Production-grade security for less than $5/day.         |
+| Service                | Estimated Cost   | Logic                                                     |
+| :--------------------- | :--------------- | :-------------------------------------------------------- |
+| **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.                 |
+| **VPC Endpoints**      | ~$115 - $140     | 9x Endpoints (S3, SQS, KMS, Bedrock, ECR, etc.) in 2 AZs. |
+| **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0).   |
+| **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.             |
+| **Database & Storage** | ~$5 - $10        | S3, DynamoDB, SQS (pay-per-request/GB) + Audit Logs.      |
+| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Llama 3 is highly affordable).   |
+| **Total Base**         | **~$175 - $225** | Production-grade security for less than $7.50/day.        |
 
 ---
 
