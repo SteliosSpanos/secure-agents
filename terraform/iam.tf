@@ -1,5 +1,5 @@
 /*
-    IAM roles and policies for compute
+    IAM roles and policies for compute and VPC flow logs:
 */
 
 // API Role

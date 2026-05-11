@@ -29,7 +29,7 @@ data "aws_iam_policy_document" "github_assume_role" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
-    condition { // Only allow your specific repository to assume this role
+    condition { // Only allow our specific repository to assume this role
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
       values   = ["repo:SteliosSpanos/secure-agents:*"]

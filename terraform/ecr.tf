@@ -1,5 +1,10 @@
 /*
-    The ECR repos for the API and the Worker
+    The ECR repos:
+    - API Repo and Worker Repo for storing container images
+    - Both repos have lifecycle policies to keep only the last 20 images
+    - Both repos are encrypted with a KMS key for security
+    - Both repos have image scanning on push enabled to detect vulnerabilities early
+    - A null resource is used to automatically push a dummy image to both repos on creation to avoid issues with empty repos
 */
 
 // ECR API Repo
