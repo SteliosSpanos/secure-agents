@@ -6,7 +6,7 @@
     - Lambda Logs
     - WAF Logs
     - API Gateway Logs
-    - SNS Alerts
+    - SNS Alerts: GuardDuty Findings, DLQ Alerts, Worker Capacity Alerts
     - SQS Alerts
 */
 
