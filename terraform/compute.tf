@@ -1,5 +1,13 @@
 /*
-    The setup for the ECS Fargate FastAPI app and AI agent worker
+    ECS Fargate FastAPI app and AI agent worker:
+    - ECS Cluster with Container Insights enabled for monitoring
+    - API Task Definition with 256 CPU units and 512 MB memory, using the API
+    - Worker Task Definition with 512 CPU units and 1024 MB memory for AI processing
+    - Both tasks use Fargate launch type and are deployed in private subnets
+    - The ALB lives infront of the API service, while the worker service is internal only
+    - Both tasks have IAM roles with least privilege permissions
+    - Both services have logging configured to CloudWatch Logs
+    - Agent worker has auto-scaling configured 
 */
 
 // ECS Cluster & Logging

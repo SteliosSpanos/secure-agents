@@ -1,5 +1,13 @@
 /*
-    All the Log Groups and VPC Flow Log
+    Log Groups and SQS Alarms:
+    - VPC Flow Logs
+    - API Logs
+    - Worker Logs
+    - Lambda Logs
+    - WAF Logs
+    - API Gateway Logs
+    - SNS Alerts
+    - SQS Alerts
 */
 
 // VPC Flow Logs
@@ -87,6 +95,9 @@ resource "aws_cloudwatch_log_group" "api_gateway_logs" {
   }
 }
 
+
+
+
 // SNS Alerts
 
 resource "aws_sns_topic" "alerts" {
@@ -108,6 +119,9 @@ resource "aws_sns_topic_policy" "alerts_policy" {
   arn    = aws_sns_topic.alerts.arn
   policy = data.aws_iam_policy_document.event_bridge_sns_policy.json
 }
+
+
+
 
 // SQS Alerts
 

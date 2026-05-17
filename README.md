@@ -143,13 +143,11 @@ graph TD
   end
   class AWSCloud orange;
 
-  %% 1. Ingress Flow
   Client -- "1. Request + API Key" --> WAF
   WAF --> CloudFront
   CloudFront -- "2. Forward x-origin-verify" --> IdentityCheck
   IdentityCheck -- "3. Valid Headers Found" --> APIGW
 
-  %% 2. Auth Flow (Corrected Endpoint Hops)
   APIGW -- "4. Invoke" --> Authorizer
   Authorizer -- "5. Decrypt Request" --> EndpointKMS
   EndpointKMS -.-> KmsAuth
@@ -157,7 +155,6 @@ graph TD
   EndpointDynamoDB -.-> ApiKeysTable
   Authorizer -- "7. Allow + context" --> APIGW
 
-  %% 3. API Flow
   APIGW -- "8. VPC Link" --> VpcLinkENI
   VpcLinkENI --> InternalALB
   InternalALB --> ApiService
@@ -165,7 +162,6 @@ graph TD
   ApiService -- "10. Log Job" --> EndpointDynamoDB
   EndpointDynamoDB -.-> JobsTable
 
-  %% 4. Worker Flow
   Client -- "11. Upload" --> S3
   S3 -- "12. Event" --> MainQueue
   WorkerService -- "13. Pull Task" --> EndpointSQS
@@ -176,7 +172,6 @@ graph TD
   EndpointBedrock -.-> BedrockInference
   WorkerService -- "16. Update Status" --> EndpointDynamoDB
 
-  %% Logging Links
   S3 -.-> S3AccessLogs
   CloudFront -.-> CloudFrontLogs
   InternalALB -.-> ALBAccessLogs
@@ -184,7 +179,6 @@ graph TD
   APIGW -.-> APIGWLogs
   VPC -.-> FlowLogs
 
-  %% Alerting Links
   EventBridge -- "High Severity" --> SNS
   MainQueue -- "DLQ/Capacity Alarms" --> SNS
 ```
