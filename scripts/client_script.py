@@ -24,11 +24,7 @@ def generate_client_key(client_name: str, webhook_url: str = None):
     raw_key = "ak_live_" + secrets.token_urlsafe(32)
     hashed_key = hashlib.sha256(raw_key.encode("utf-8")).hexdigest()
 
-    item = {
-        "api_key": hashed_key,
-        "client_id": client_name,
-        "active": True
-    }
+    item = {"api_key": hashed_key, "client_id": client_name, "active": True}
 
     if webhook_url:
         item["webhook_url"] = webhook_url
@@ -88,7 +84,6 @@ if __name__ == "__main__":
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
     )
 
-
     parser = argparse.ArgumentParser(description="SecureAgents API Key Manager")
     group = parser.add_mutually_exclusive_group(required=True)
 
@@ -101,12 +96,14 @@ if __name__ == "__main__":
     )
 
     group.add_argument(
-        "--webhook-url", type=str, help="Optional webhook URL to associate with the API key"
+        "--webhook-url",
+        type=str,
+        help="Optional webhook URL to associate with the API key",
     )
 
     args = parser.parse_args()
 
     if args.client_id:
-        generate_client_key(args.client_id, arsgs.webhook_url)
+        generate_client_key(args.client_id, args.webhook_url)
     elif args.deactivate:
         deactivate_key(args.deactivate)
