@@ -112,13 +112,14 @@ resource "aws_security_group" "vpc_endpoints_sg" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   ingress {
-    description = "HTTPS from Fargate API and Agent"
+    description = "HTTPS from Fargate API and Agent and Lambda Authorizer SGs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
     security_groups = [
       aws_security_group.fargate_api_sg.id,
-      aws_security_group.fargate_worker_sg.id
+      aws_security_group.fargate_worker_sg.id,
+      aws_security_group.authorizer_lambda_sg.id
     ]
   }
 
@@ -140,6 +141,14 @@ resource "aws_security_group" "authorizer_lambda_sg" {
     to_port         = 443
     protocol        = "tcp"
     prefix_list_ids = [data.aws_prefix_list.dynamodb.id]
+  }
+
+  egress {
+    description = "Allow HTTPS egress to Interface Endpoints (KMS, Logs)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
   }
 
   tags = {
