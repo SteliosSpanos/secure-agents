@@ -3,7 +3,7 @@
   - API Keys Table: Stores API keys with TTL for expiration and encryption at rest
   - Jobs Table: Stores job information with a composite primary key (client_id, job_id), TTL for cleanup, and encryption at rest
   - Both have point-in-time recovery enabled for data protection
-  - A resource policy is attached to the Jobs table to restrict access to the VPC endpoint
+  - A resource policy is attached to both the API Keys table and the Jobs table to restrict access to the VPC endpoint
   - A VPC endpoint is created for DynamoDB
 */
 
@@ -37,6 +37,11 @@ resource "aws_dynamodb_table" "api_keys" {
   tags = {
     Name = "${var.project_name}-api-keys"
   }
+}
+
+resource "aws_dynamodb_resource_policy" "api_keys_policy" {
+  resource_arn = aws_dynamodb_table.api_keys.arn
+  policy       = data.aws_iam_policy_document.api_k
 }
 
 // Jobs Table
@@ -78,7 +83,7 @@ resource "aws_dynamodb_table" "jobs" {
 
 resource "aws_dynamodb_resource_policy" "jobs_policy" {
   resource_arn = aws_dynamodb_table.jobs.arn
-  policy       = data.aws_iam_policy_document.dynamodb_table_policy.json
+  policy       = data.aws_iam_policy_document.jobs_table_policy.json
 }
 
 // VPC Endpoint for DynamoDB
