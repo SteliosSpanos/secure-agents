@@ -154,9 +154,8 @@ def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
             ConditionExpression="attribute_not_exists(client_id) AND attribute_not_exists(job_id)",
         )
     except ClientError as e:
-        if (
-            e.response["Error"]["Code"] == "ConditionalCheckFailedException"
-        ):  # A record with this job_id already exists, which should never happen since we use UUIDs.
+        # A record with this job_id already exists, which should never happen since we use UUIDs.
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
             logger.exception(
                 f"Job record for client {client_id}, job {job_id} already exists."
             )
