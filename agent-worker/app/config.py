@@ -8,11 +8,15 @@ class Settings(BaseSettings):
     sqs_queue_url: str = Field(default="", validation_alias="SQS_QUEUE_URL")
 
     bedrock_model_id: str = Field(
-        default="meta.llama3-8b-instruct-v1:0", validation_alias="BEDROCK_MODEL_ID"
+        default="anthropic.claude-3-haiku-20240307-v1:0", validation_alias="BEDROCK_MODEL_ID"
     )
 
     jobs_table_name: str = Field(
         default="agents_Jobs", validation_alias="DYNAMODB_JOBS_TABLE"
+    )
+
+    api_keys_table_name: str = Field(
+        default="agents_APIKeys", validation_alias="DYNAMODB_API_KEYS_TABLE"
     )
 
     max_file_size_mb: int = Field(default=50, validation_alias="MAX_FILE_SIZE_MB")
