@@ -816,6 +816,17 @@ data "aws_iam_policy_document" "authorizer_lambda_iam_policy" {
 
 data "aws_iam_policy_document" "webhook_lambda_iam_policy" {
   statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:DescribeStream",
+      "dynamodb:GetRecords",
+      "dynamodb:GetShardIterator",
+      "dynamodb:ListStreams"
+    ]
+    resources = [aws_dynamodb_table.jobs.stream_arn]
+  }
+
+  statement {
     effect    = "Allow"
     actions   = ["sqs:SendMessage"]
     resources = [aws_sqs_queue.webhook_queue.arn]
@@ -827,7 +838,22 @@ data "aws_iam_policy_document" "webhook_lambda_iam_policy" {
       "kms:GenerateDataKey*",
       "kms:Decrypt"
     ]
-    resources = [aws_kms_key.shared.arn]
+    resources = [
+      aws_kms_key.shared.arn,
+      aws_kms_key.jobs_table.arn
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = [
+      aws_cloudwatch_log_group.webhook_logs.arn,
+      "${aws_cloudwatch_log_group.webhook_logs.arn}:*"
+    ]
   }
 }
 

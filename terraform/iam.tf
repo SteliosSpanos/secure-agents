@@ -28,6 +28,19 @@ resource "aws_iam_role_policy" "agent_task_policy" {
   policy = data.aws_iam_policy_document.agent_iam_policy.json
 }
 
+// Webhook Task Role
+
+resource "aws_iam_role" "webhook_task_role" {
+  name               = "${var.project_name}-webhook-task-role"
+  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume_role.json
+}
+
+resource "aws_iam_role_policy" "webhook_task_policy" {
+  name   = "${var.project_name}-webhook-task-permissions"
+  role   = aws_iam_role.webhook_task_role.id
+  policy = data.aws_iam_policy_document.webhook_iam_policy.json
+}
+
 // ECS Execution Role
 
 resource "aws_iam_role" "ecs_execution_role" {
@@ -40,21 +53,39 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonECSTaskExecutionRolePolicy"
 }
 
-// Lambda Permissions
+// Lambda Authorizer Permissions
 
 resource "aws_iam_role" "authorizer_role" {
   name               = "${var.project_name}-authorizer-role"
-  assume_role_policy = data.aws_iam_policy_document.authorizer_assume_role.json
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 }
 
 resource "aws_iam_role_policy" "authorizer_policy" {
   name   = "${var.project_name}-authorizer-policy"
   role   = aws_iam_role.authorizer_role.id
-  policy = data.aws_iam_policy_document.authorizer_iam_policy.json
+  policy = data.aws_iam_policy_document.authorizer_lambda_iam_policy.json
 }
 
 resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
   role       = aws_iam_role.authorizer_role.id
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+// Lmabda Webhook Permissions
+
+resource "aws_iam_role" "webhook_lambda_role" {
+  name               = "${var.project_name}-webhook-lambda-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+resource "aws_iam_role_policy" "webhook_lambda_policy" {
+  name   = "${var.project_name}-webhook-lambda-policy"
+  role   = aws_iam_role.webhook_lambda_role.id
+  policy = data.aws_iam_policy_document.webhook_lambda_iam_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "webhook_lambda_vpc_access" {
+  role       = aws_iam_role.webhook_lambda_role.id
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
