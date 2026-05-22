@@ -108,11 +108,11 @@ resource "aws_security_group" "fargate_worker_sg" {
 
 resource "aws_security_group" "vpc_endpoints_sg" {
   name        = "${var.project_name}-endpoints-sg"
-  description = "Allow ECS tasks to communicate with AWS Service Endpoints"
+  description = "Allow ECS tasks and Lambdas to communicate with AWS Service Endpoints"
   vpc_id      = aws_vpc.agents_vpc.id
 
   ingress {
-    description = "HTTPS from Fargate API and Agent and Lambda Authorizer SGs"
+    description = "HTTPS from Fargate API, Agent and Lambda Authorizer, Webhook Trigger SGs"
     from_port   = 443
     to_port     = 443
     protocol    = "tcp"
