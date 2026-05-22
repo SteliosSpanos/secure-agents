@@ -230,7 +230,8 @@ data "aws_iam_policy_document" "shared_kms_policy" {
       type = "AWS"
       identifiers = [
         aws_iam_role.api_task_role.arn,
-        aws_iam_role.agent_task_role.arn
+        aws_iam_role.agent_task_role.arn,
+        aws_iam_role.webhook_trigger_role.arn
       ]
     }
     actions = [
@@ -372,7 +373,8 @@ data "aws_iam_policy_document" "jobs_table_kms_policy" {
       type = "AWS"
       identifiers = [
         aws_iam_role.api_task_role.arn,
-        aws_iam_role.agent_task_role.arn
+        aws_iam_role.agent_task_role.arn,
+        aws_iam_role.webhook_trigger_role.arn
       ]
     }
     actions = [
@@ -814,7 +816,7 @@ data "aws_iam_policy_document" "authorizer_lambda_iam_policy" {
 
 // Lambda (for Webhook)
 
-data "aws_iam_policy_document" "webhook_lambda_iam_policy" {
+data "aws_iam_policy_document" "webhook_trigger_iam_policy" {
   statement {
     effect = "Allow"
     actions = [
@@ -851,8 +853,8 @@ data "aws_iam_policy_document" "webhook_lambda_iam_policy" {
       "logs:PutLogEvents"
     ]
     resources = [
-      aws_cloudwatch_log_group.webhook_logs.arn,
-      "${aws_cloudwatch_log_group.webhook_logs.arn}:*"
+      aws_cloudwatch_log_group.webhook_trigger_logs.arn,
+      "${aws_cloudwatch_log_group.webhook_trigger_logs.arn}:*"
     ]
   }
 }
