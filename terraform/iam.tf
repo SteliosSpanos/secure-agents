@@ -73,19 +73,19 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
 
 // Lmabda Webhook Permissions
 
-resource "aws_iam_role" "webhook_lambda_role" {
-  name               = "${var.project_name}-webhook-lambda-role"
+resource "aws_iam_role" "webhook_trigger_role" {
+  name               = "${var.project_name}-webhook-trigger-role"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
 }
 
-resource "aws_iam_role_policy" "webhook_lambda_policy" {
-  name   = "${var.project_name}-webhook-lambda-policy"
-  role   = aws_iam_role.webhook_lambda_role.id
-  policy = data.aws_iam_policy_document.webhook_lambda_iam_policy.json
+resource "aws_iam_role_policy" "webhook_trigger_policy" {
+  name   = "${var.project_name}-webhook-trigger-policy"
+  role   = aws_iam_role.webhook_trigger_role.id
+  policy = data.aws_iam_policy_document.webhook_trigger_iam_policy.json
 }
 
-resource "aws_iam_role_policy_attachment" "webhook_lambda_vpc_access" {
-  role       = aws_iam_role.webhook_lambda_role.id
+resource "aws_iam_role_policy_attachment" "webhook_trigger_vpc_access" {
+  role       = aws_iam_role.webhook_trigger_role.id
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
