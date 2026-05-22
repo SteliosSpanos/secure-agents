@@ -120,7 +120,8 @@ resource "aws_security_group" "vpc_endpoints_sg" {
       aws_security_group.fargate_api_sg.id,
       aws_security_group.fargate_worker_sg.id,
       aws_security_group.authorizer_sg.id,
-      aws_security_group.webhook_trigger_sg.id
+      aws_security_group.webhook_trigger_sg.id,
+      aws_security_group.webhook_consumer_sg.id
     ]
   }
 
@@ -183,5 +184,41 @@ resource "aws_security_group" "webhook_trigger_sg" {
 
   tags = {
     Name = "${var.project_name}-webhook-trigger-sg"
+  }
+}
+
+// Lambda Webhook Consumer
+
+resource "aws_security_group" "webhook_consumer_sg" {
+  name        = "${var.project_name}-webhook-consumer-sg"
+  description = "Allow Webhook Consumer Lambda to reach VPC Endpoints and External Webhook Endpoints"
+  vpc_id      = aws_vpc.agents_vpc.id
+
+  egress {
+    description     = "Allow HTTPS egress to DynamoDB Gateway Endpoint"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_prefix_list.dynamodb.id]
+  }
+
+  egress {
+    description = "Allow HTTPS egress to Interface Endpoints (KMS, SQS, Logs)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+  }
+
+  egress {
+    description = "Allow HTTPS to External Webhook URLs"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0"]
+  }
+
+  tags = {
+    Name = "${var.project_name}-webhook-consumer-sg"
   }
 }
