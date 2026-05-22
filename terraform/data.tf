@@ -703,7 +703,7 @@ data "aws_iam_policy_document" "webhook_iam_policy" {
   statement {
     effect = "Allow"
     actions = [
-      "sqs:ReceiveMesage",
+      "sqs:ReceiveMessage",
       "sqs:DeleteMessage",
       "sqs:GetQueueAttributes"
     ]

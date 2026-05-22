@@ -13,7 +13,7 @@
 
   Webhook Queue:
   - stores messages for webhook (sending results to client)
-  - has similar configuration to the main queue but is used for a different purpose4
+  - has similar configuration to the main queue but is used for a different purpose
   - also has a DLQ for failed webhook messages
   - There is no policy because the permissions are handled by the roles of the webhook service and the lambda
 

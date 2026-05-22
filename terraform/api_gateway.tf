@@ -109,7 +109,7 @@ resource "aws_lambda_function" "authorizer" {
       aws_subnet.agents_private_subnet_1.id,
       aws_subnet.agents_private_subnet_2.id
     ]
-    security_group_ids = [aws_security_group.authorizer_lambda_sg.id]
+    security_group_ids = [aws_security_group.authorizer_sg.id]
   }
 
   environment {

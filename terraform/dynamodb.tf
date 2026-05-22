@@ -59,7 +59,7 @@ resource "aws_dynamodb_table" "api_keys" {
 
 resource "aws_dynamodb_resource_policy" "api_keys_policy" {
   resource_arn = aws_dynamodb_table.api_keys.arn
-  policy       = data.aws_iam_policy_document.api_k
+  policy       = data.aws_iam_policy_document.api_keys_table_policy.json
 }
 
 // Jobs Table
