@@ -58,7 +58,7 @@ resource "aws_cloudwatch_log_group" "worker_logs" {
   }
 }
 
-// Lambda Logs
+// Lambda Authorizer Logs
 
 resource "aws_cloudwatch_log_group" "authorizer_logs" {
   name              = "/aws/lambda/${var.project_name}-authorizer"
@@ -67,6 +67,18 @@ resource "aws_cloudwatch_log_group" "authorizer_logs" {
 
   tags = {
     Name = "${var.project_name}-authorizer-logs"
+  }
+}
+
+// Lambda Webhook Trigger Logs
+
+resource "aws_cloudwatch_log_group" "webhook_trigger_logs" {
+  name              = "/aws/lambda/${var.project_name}-webhook-trigger"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.shared.arn
+
+  tags = {
+    Name = "${var.project_name}-webhook-trigger-logs"
   }
 }
 
