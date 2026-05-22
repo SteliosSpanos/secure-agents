@@ -13,7 +13,7 @@ from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 
 
-logger = logging.getLogger()
+logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
 
 aws_config = Config(
