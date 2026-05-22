@@ -15,10 +15,6 @@ class Settings(BaseSettings):
         default="agents_Jobs", validation_alias="DYNAMODB_JOBS_TABLE"
     )
 
-    api_keys_table_name: str = Field(
-        default="agents_APIKeys", validation_alias="DYNAMODB_API_KEYS_TABLE"
-    )
-
     max_file_size_mb: int = Field(default=50, validation_alias="MAX_FILE_SIZE_MB")
 
     char_limit: int = Field(default=15000, validation_alias="CHAR_LIMIT")
