@@ -52,6 +52,9 @@ resource "aws_dynamodb_table" "jobs" {
   hash_key     = "client_id"
   range_key    = "job_id"
 
+  stream_enabled   = true
+  stream_view_type = "NEW_AND_OLD_IMAGES"
+
   attribute {
     name = "client_id"
     type = "S"
