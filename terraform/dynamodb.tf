@@ -7,6 +7,24 @@
   - A VPC endpoint is created for DynamoDB
 */
 
+// VPC Endpoint for DynamoDB
+
+resource "aws_vpc_endpoint" "dynamodb" {
+  vpc_id            = aws_vpc.agents_vpc.id
+  service_name      = "com.amazonaws.${var.region}.dynamodb"
+  vpc_endpoint_type = "Gateway"
+  route_table_ids   = [aws_route_table.agents_private_rt.id]
+
+  tags = {
+    Name = "${var.project_name}-dynamodb-endpoint"
+  }
+}
+
+resource "aws_vpc_endpoint_policy" "dynamodb_policy" {
+  vpc_endpoint_id = aws_vpc_endpoint.dynamodb.id
+  policy          = data.aws_iam_policy_document.dynamodb_endpoint_policy.json
+}
+
 // API Keys Table
 
 resource "aws_dynamodb_table" "api_keys" {
@@ -89,20 +107,48 @@ resource "aws_dynamodb_resource_policy" "jobs_policy" {
   policy       = data.aws_iam_policy_document.jobs_table_policy.json
 }
 
-// VPC Endpoint for DynamoDB
 
-resource "aws_vpc_endpoint" "dynamodb" {
-  vpc_id            = aws_vpc.agents_vpc.id
-  service_name      = "com.amazonaws.${var.region}.dynamodb"
-  vpc_endpoint_type = "Gateway"
-  route_table_ids   = [aws_route_table.agents_private_rt.id]
 
-  tags = {
-    Name = "${var.project_name}-dynamodb-endpoint"
+// Webhook Lambda 
+
+data "archive_file" "webhook_zip" {
+  type        = "zip"
+  source_file = "../lambda-webhook/webhook_trigger.py"
+  output_path = "webhook_trigger.zip"
+}
+
+resource "aws_lambda_function" "webhook_trigger" {
+  description      = "Lambda Webhook Trigger to send completion message to webhook service"
+  filename         = data.archive_file.webhook_zip.output_path
+  source_code_hash = data.archive_file.webhook_zip.output_base64sha256
+  function_name    = "${var.project_name}-webhook-trigger"
+  role             = aws_iam_role.webhook_trigger_role.arn
+  handler          = "webhook_trigger.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 15
+  memory_size      = 256
+
+  depends_on = [aws_cloudwatch_log_group.webhook_trigger_logs]
+
+  vpc_config {
+    subnet_ids = [
+      aws_subnet.agents_private_subnet_1.id,
+      aws_subnet.agents_private_subnet_2.id
+    ]
+    security_group_ids = [aws_security_group.webhook_trigger_sg.id]
+  }
+
+  environment {
+    variables = {
+      WEBHOOK_QUEUE_URL = aws_sqs_queue.webhook_queue.id
+    }
   }
 }
 
-resource "aws_vpc_endpoint_policy" "dynamodb_policy" {
-  vpc_endpoint_id = aws_vpc_endpoint.dynamodb.id
-  policy          = data.aws_iam_policy_document.dynamodb_endpoint_policy.json
+resource "aws_lambda_event_source_mapping" "webhook_trigger" {
+  event_source_arn       = aws_dynamodb_table.jobs.stream_arn
+  function_name          = aws_lambda_function.webhook_trigger.arn
+  starting_position      = "LATEST" // Only new changes from now on
+  batch_size             = 10       // The Lambda event will contain up to 10 records
+  maximum_retry_attempts = 3
 }
