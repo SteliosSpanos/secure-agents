@@ -24,9 +24,9 @@ logger = logging.getLogger("worker_daemon")
 aws_config = Config(
     region_name=settings.aws_region,
     retries={"max_attempts": 3, "mode": "standard"},
-    connect_timeout=5, # If we cant establish a TCP connection in 5 sec, throw an error
-    read_timeout=300, # The amount of time the SDK will wait for a response before timing out.
-                      # Must be > SQS WaitTimeSeconds and accommodate Bedrock
+    connect_timeout=5,  # If we cant establish a TCP connection in 5 sec, throw an error
+    read_timeout=300,  # The amount of time the SDK will wait for a response before timing out.
+    # Must be > SQS WaitTimeSeconds and accommodate Bedrock
 )
 
 try:
@@ -154,7 +154,9 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
         raise ValueError("Could not parse PDF")
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path) # Always cleans up the file, even if an exception occurs
+            os.remove(
+                tmp_file_path
+            )  # Always cleans up the file, even if an exception occurs
 
 
 def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, bool]:
@@ -253,7 +255,7 @@ def update_job(
         return True
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            return False # Another worker already claimed the job
+            return False  # Another worker already claimed the job
         raise
     except BotoCoreError:
         logger.exception(f"AWS SDK Transport Error for job {job_id}.")

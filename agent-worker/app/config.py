@@ -8,7 +8,8 @@ class Settings(BaseSettings):
     sqs_queue_url: str = Field(default="", validation_alias="SQS_QUEUE_URL")
 
     bedrock_model_id: str = Field(
-        default="anthropic.claude-3-haiku-20240307-v1:0", validation_alias="BEDROCK_MODEL_ID"
+        default="anthropic.claude-3-haiku-20240307-v1:0",
+        validation_alias="BEDROCK_MODEL_ID",
     )
 
     jobs_table_name: str = Field(
