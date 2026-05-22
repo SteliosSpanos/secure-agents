@@ -109,18 +109,18 @@ resource "aws_dynamodb_resource_policy" "jobs_policy" {
 
 
 
-// Webhook Lambda 
+// Webhook Trigger Lambda 
 
-data "archive_file" "webhook_zip" {
+data "archive_file" "webhook_trigger_zip" {
   type        = "zip"
-  source_file = "../lambda-webhook/webhook_trigger.py"
+  source_file = "../lambda-webhook-trigger/webhook_trigger.py"
   output_path = "webhook_trigger.zip"
 }
 
 resource "aws_lambda_function" "webhook_trigger" {
   description      = "Lambda Webhook Trigger to send completion message to webhook service"
-  filename         = data.archive_file.webhook_zip.output_path
-  source_code_hash = data.archive_file.webhook_zip.output_base64sha256
+  filename         = data.archive_file.webhook_trigger_zip.output_path
+  source_code_hash = data.archive_file.webhook_trigger_zip.output_base64sha256
   function_name    = "${var.project_name}-webhook-trigger"
   role             = aws_iam_role.webhook_trigger_role.arn
   handler          = "webhook_trigger.lambda_handler"
