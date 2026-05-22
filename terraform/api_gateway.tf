@@ -78,6 +78,9 @@ resource "aws_apigatewayv2_stage" "default_stage" {
   }
 }
 
+
+
+
 // Lambda Zip Automation
 
 data "archive_file" "authorizer_zip" {
