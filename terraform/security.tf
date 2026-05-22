@@ -119,7 +119,8 @@ resource "aws_security_group" "vpc_endpoints_sg" {
     security_groups = [
       aws_security_group.fargate_api_sg.id,
       aws_security_group.fargate_worker_sg.id,
-      aws_security_group.authorizer_lambda_sg.id
+      aws_security_group.authorizer_sg.id,
+      aws_security_group.webhook_trigger_sg.id
     ]
   }
 
@@ -130,7 +131,7 @@ resource "aws_security_group" "vpc_endpoints_sg" {
 
 // Lambda Authorizer
 
-resource "aws_security_group" "authorizer_lambda_sg" {
+resource "aws_security_group" "authorizer_sg" {
   name        = "${var.project_name}-authorizer-sg"
   description = "Allow Authorizer Lambda to reach DynamoDB Endpoints"
   vpc_id      = aws_vpc.agents_vpc.id
@@ -156,3 +157,31 @@ resource "aws_security_group" "authorizer_lambda_sg" {
   }
 }
 
+// Lambda Webhook Trigger
+
+resource "aws_security_group" "webhook_trigger_sg" {
+  name        = "${var.project_name}-webhook-trigger-sg"
+  description = "Allow Webhook Trigger Lambda to reach VPC Endpoints"
+  vpc_id      = aws_vpc.agents_vpc.id
+
+  // The lambda is actually the one calling the DynamoDB stream
+  egress {
+    description     = "Allow HTTPS egress to DynamoDB Gateway Endpoint"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    prefix_list_ids = [data.aws_prefix_list.dynamodb.id]
+  }
+
+  egress {
+    description = "Allow HTTPS egress to Interface Endpoints (KMS, SQS, Logs)"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+  }
+
+  tags = {
+    Name = "${var.project_name}-webhook-trigger-sg"
+  }
+}
