@@ -647,12 +647,9 @@ data "aws_iam_policy_document" "api_iam_policy" {
 
 data "aws_iam_policy_document" "agent_iam_policy" {
   statement {
-    sid    = "DynamoDBAccess"
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:UpdateItem"
-    ]
+    sid       = "DynamoDBAccess"
+    effect    = "Allow"
+    actions   = ["dynamodb:UpdateItem"]
     resources = [aws_dynamodb_table.jobs.arn]
   }
 
@@ -672,7 +669,6 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     actions = [
       "sqs:ReceiveMessage",
       "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes",
       "sqs:ChangeMessageVisibility"
     ]
     resources = [aws_sqs_queue.agent_queue.arn]
@@ -690,13 +686,35 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     effect = "Allow"
     actions = [
       "kms:Decrypt",
-      "kms:Encrypt",
       "kms:GenerateDataKey*"
     ]
     resources = [
       aws_kms_key.jobs_table.arn,
       aws_kms_key.shared.arn
     ]
+  }
+}
+
+// Webhook Task Policy 
+
+data "aws_iam_policy_document" "webhook_iam_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMesage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes"
+    ]
+    resources = [aws_sqs_queue.webhook_queue.arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:Decrypt",
+      "kms:GenerateDataKey*"
+    ]
+    resources = [aws_kms_key.shared.arn]
   }
 }
 
@@ -757,7 +775,7 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
 
 // Lambda (for API Gateway)
 
-data "aws_iam_policy_document" "authorizer_assume_role" {
+data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
     effect  = "Allow"
     actions = ["sts:AssumeRole"]
@@ -768,7 +786,7 @@ data "aws_iam_policy_document" "authorizer_assume_role" {
   }
 }
 
-data "aws_iam_policy_document" "authorizer_iam_policy" {
+data "aws_iam_policy_document" "authorizer_lambda_iam_policy" {
   statement {
     effect    = "Allow"
     actions   = ["dynamodb:GetItem"]
@@ -791,6 +809,25 @@ data "aws_iam_policy_document" "authorizer_iam_policy" {
       aws_cloudwatch_log_group.authorizer_logs.arn,
       "${aws_cloudwatch_log_group.authorizer_logs.arn}:*"
     ]
+  }
+}
+
+// Lambda (for Webhook)
+
+data "aws_iam_policy_document" "webhook_lambda_iam_policy" {
+  statement {
+    effect    = "Allow"
+    actions   = ["sqs:SendMessage"]
+    resources = [aws_sqs_queue.webhook_queue.arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "kms:GenerateDataKey*",
+      "kms:Decrypt"
+    ]
+    resources = [aws_kms_key.shared.arn]
   }
 }
 

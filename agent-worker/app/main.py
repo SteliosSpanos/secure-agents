@@ -24,17 +24,21 @@ logger = logging.getLogger("worker_daemon")
 aws_config = Config(
     region_name=settings.aws_region,
     retries={"max_attempts": 3, "mode": "standard"},
-    connect_timeout=5,
-    read_timeout=300,  # Must be > SQS WaitTimeSeconds and accommodate Bedrock
+    connect_timeout=5, # If we cant establish a TCP connection in 5 sec, throw an error
+    read_timeout=300, # The amount of time the SDK will wait for a response before timing out.
+                      # Must be > SQS WaitTimeSeconds and accommodate Bedrock
 )
 
-
-sqs = boto3.client("sqs", config=aws_config)
-s3 = boto3.client("s3", config=aws_config)
-bedrock = boto3.client("bedrock-runtime", config=aws_config)
-dynamodb = boto3.resource("dynamodb", config=aws_config)
-
-jobs_table = dynamodb.Table(settings.jobs_table_name)
+try:
+    session = boto3.Session()
+    sqs = session.client("sqs", config=aws_config)
+    s3 = session.client("s3", config=aws_config)
+    bedrock = session.client("bedrock-runtime", config=aws_config)
+    dynamodb = session.resource("dynamodb", config=aws_config)
+    jobs_table = dynamodb.Table(settings.jobs_table_name)
+except Exception:
+    logger.exception("Failed to initialize AWS session.")
+    sys.exit(1)
 
 
 # SIGTERM handler is called by ECS before it terminates the Fargate task during scaling, deployment...
@@ -54,8 +58,10 @@ def handle_sigterm(*args):
             f"Emergency Rescue: Reverting job {active_job['job_id']} to PENDING_UPLOAD."
         )
         try:
+            # Revert status back to PENDING_UPLOAD
             update_job(active_job["client_id"], active_job["job_id"], "PENDING_UPLOAD")
 
+            # Make the SQS message visible immediately so another worker can pick it up
             sqs.change_message_visibility(
                 QueueUrl=settings.sqs_queue_url,
                 ReceiptHandle=active_job["receipt_handle"],
@@ -148,7 +154,7 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
         raise ValueError("Could not parse PDF")
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
-            os.remove(tmp_file_path)
+            os.remove(tmp_file_path) # Always cleans up the file, even if an exception occurs
 
 
 def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, bool]:
@@ -247,7 +253,7 @@ def update_job(
         return True
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            return False
+            return False # Another worker already claimed the job
         raise
     except BotoCoreError:
         logger.exception(f"AWS SDK Transport Error for job {job_id}.")
@@ -260,6 +266,8 @@ def update_job(
 
 
 def main():
+    # AWS Errors -> revert back to PENDING_UPLOAD with re-raise to be retried
+    # Unexpected Errors -> mark as FAILED with error summary and delete message to avoid retries
     logger.info("Worker daemon started. Listening for SQS messages...")
 
     while not shutdown_flag:
