@@ -15,17 +15,14 @@ aws_config = Config(
 )
 
 sqs = boto3.client("sqs", config=aws_config)
-WEBHOOK_QUEUE_URL = os.environ.get("WEBHOOK_QUEUE_URL")
+webhook_queue_url = os.environ.get("WEBHOOK_QUEUE_URL")
+if not webhook_queue_url:
+    raise RuntimeError("Critical environment variables are missing.")
+
 
 
 def lambda_handler(event, context):
     """Triggers from DynamoDB stream when a new job is completed and sends the a message to SQS for the webhook service"""
-    if not WEBHOOK_QUEUE_URL:
-        logger.error(
-            "Configuration error: WEBHOOK_QUEUE_URL environment variable is not set."
-        )
-        return {"success": False}
-
     records_processed = 0
     for record in event.get("Records", []):
         try:
@@ -67,7 +64,7 @@ def lambda_handler(event, context):
                 }
 
                 sqs.send_message(
-                    QueueUrl=WEBHOOK_QUEUE_URL,
+                    QueueUrl=webhook_queue_url,
                     MessageBody=json.dumps(message_body),
                     MessageAttributes={
                         "MessageType": {

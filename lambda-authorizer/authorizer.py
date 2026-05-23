@@ -26,20 +26,18 @@ aws_config = Config(
 
 # Handling Database and TCP connections outside of the handler for reduced latency of cold starts
 dynamodb = boto3.resource("dynamodb", config=aws_config)
-table_name = os.environ.get("API_KEYS_TABLE", "agents_APIKeys")  # From terraform
-api_keys_table = dynamodb.Table(table_name)
 
+table_name = os.environ.get("API_KEYS_TABLE")  # From terraform
 expected_origin_secret = os.environ.get("ORIGIN_SECRET")
+if not table_name or not expected_origin_secret:
+    raise RuntimeError("Critical environment variables are missing.")
+
+api_keys_table = dynamodb.Table(table_name)
 
 
 def lambda_handler(event, context):
     """Verifies the API key before the request hits the ALB"""
     headers = event.get("headers", {})
-
-    if not expected_origin_secret:
-        logger.error("Configuration error: ORIGIN_SECRET env variable is missing.")
-        return {"isAuthorized": False}
-
     origin_header = headers.get("x-origin-verify")
 
     if origin_header != expected_origin_secret:
