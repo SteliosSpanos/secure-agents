@@ -58,7 +58,7 @@ def lambda_handler(event, context):
         response = api_keys_table.query(
             IndexName="ApiKeyIndex",
             KeyConditionExpression=Key("api_key").eq(hashed_key),
-            Limit=1
+            Limit=1,
         )
         items = response.get("Items", [])
 

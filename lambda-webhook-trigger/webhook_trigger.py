@@ -20,7 +20,6 @@ if not webhook_queue_url:
     raise RuntimeError("Critical environment variables are missing.")
 
 
-
 def lambda_handler(event, context):
     """Triggers from DynamoDB stream when a new job is completed and sends the a message to SQS for the webhook service"""
     records_processed = 0
