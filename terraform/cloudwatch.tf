@@ -82,6 +82,18 @@ resource "aws_cloudwatch_log_group" "webhook_trigger_logs" {
   }
 }
 
+// Lambda Webhook Consumer Logs
+
+resource "aws_cloudwatch_log_group" "webhook_consumer_logs" {
+  name              = "/aws/lambda/${var.project_name}-webhook-consumer"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.shared.arn
+
+  tags = {
+    Name = "${var.project_name}-webhook-consumer-logs"
+  }
+}
+
 // WAF Logs (must be in us-east-1 for Cloudfront and name must start with aws-waf-logs-)
 
 resource "aws_cloudwatch_log_group" "waf_logs" {
