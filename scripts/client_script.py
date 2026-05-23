@@ -1,4 +1,4 @@
-# Because client_id is the hash_key in the DynamoDB table, 
+# Because client_id is the hash_key in the DynamoDB table,
 # everytime we run with the same client_id it overwrites the previous record
 
 import secrets
@@ -46,7 +46,7 @@ def generate_client_key(client_name: str, webhook_url: str = None) -> dict:
             "client_id": client_name,
             "raw_key": raw_key,
             "webhook_url": webhook_url,
-            "webhook_secret": raw_webhook_secret
+            "webhook_secret": raw_webhook_secret,
         }
     except (ClientError, BotoCoreError) as e:
         logger.exception("AWS Infrastructure Error.")
@@ -82,7 +82,9 @@ def deactivate_key(raw_api_key) -> tuple[bool, str]:
         return True, client_id
     except ClientError as e:
         if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
-            logger.exception("Race condition: Client ID was removed during deactivation.")
+            logger.exception(
+                "Race condition: Client ID was removed during deactivation."
+            )
             return False, ""
         logger.exception("AWS API Error during key deactivation.")
         raise RuntimeError("AWS transaction update failed.") from e
@@ -95,20 +97,30 @@ if __name__ == "__main__":
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
-        stream=sys.stderr
+        stream=sys.stderr,
     )
 
     parser = argparse.ArgumentParser(description="SecureAgents API Key Manager")
-    
+
     # Use a group for the action
     action_group = parser.add_mutually_exclusive_group(required=True)
-    action_group.add_argument("--generate", action="store_true", help="Generate a new API key")
-    action_group.add_argument("--deactivate", action="store_true", help="Deactivate an existing key")
+    action_group.add_argument(
+        "--generate", action="store_true", help="Generate a new API key"
+    )
+    action_group.add_argument(
+        "--deactivate", action="store_true", help="Deactivate an existing key"
+    )
 
     # Options
-    parser.add_argument("--client-id", type=str, help="Client ID (required for --generate)")
-    parser.add_argument("--key", type=str, help="Raw API key string (required for --deactivate)")
-    parser.add_argument("--webhook-url", type=str, help="Optional webhook URL for new key")
+    parser.add_argument(
+        "--client-id", type=str, help="Client ID (required for --generate)"
+    )
+    parser.add_argument(
+        "--key", type=str, help="Raw API key string (required for --deactivate)"
+    )
+    parser.add_argument(
+        "--webhook-url", type=str, help="Optional webhook URL for new key"
+    )
 
     args = parser.parse_args()
 
@@ -137,9 +149,13 @@ if __name__ == "__main__":
                 print(f"SUCCESS: Deactivated API key for client: {client_id}")
                 sys.exit(0)
             else:
-                print(f"ERROR: API key not found or deactivation failed.", file=sys.stderr)
+                print(
+                    f"ERROR: API key not found or deactivation failed.", file=sys.stderr
+                )
                 sys.exit(1)
     except Exception as e:
-        logger.exception("A fatal top-level runtime failure dropped processing threads.")
+        logger.exception(
+            "A fatal top-level runtime failure dropped processing threads."
+        )
         print(f"\nCRITICAL: {e}\n", file=sys.stderr)
         sys.exit(1)
