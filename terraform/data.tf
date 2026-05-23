@@ -786,9 +786,15 @@ data "aws_iam_policy_document" "lambda_assume_role" {
 
 data "aws_iam_policy_document" "authorizer_lambda_iam_policy" {
   statement {
-    effect    = "Allow"
-    actions   = ["dynamodb:GetItem"]
-    resources = [aws_dynamodb_table.api_keys.arn]
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:Query"
+    ]
+    resources = [
+      aws_dynamodb_table.api_keys.arn,
+      "${aws_dynamodb_table.api_keys.arn}/index/*"
+    ]
   }
 
   statement {
@@ -859,15 +865,11 @@ data "aws_iam_policy_document" "webhook_trigger_iam_policy" {
 
 data "aws_iam_policy_document" "webhook_consumer_iam_policy" {
   statement {
-    effect = "Allow"
-    actions = [
-      "dynamodb:GetItem",
-      "dynamodb:Query"
-    ]
+    effect  = "Allow"
+    actions = ["dynamodb:GetItem"]
     resources = [
       aws_dynamodb_table.jobs.arn,
       aws_dynamodb_table.api_keys.arn,
-      "${aws_dynamodb_table.api_keys.arn}/index/*"
     ]
   }
 
