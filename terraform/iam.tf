@@ -45,6 +45,8 @@ resource "aws_iam_role_policy_attachment" "ecs_execution_role_policy" {
 resource "aws_iam_role" "authorizer_role" {
   name               = "${var.project_name}-authorizer-role"
   assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+
+  depends_on = [aws_dynamodb_table_index.api_keys_index]
 }
 
 resource "aws_iam_role_policy" "authorizer_policy" {
