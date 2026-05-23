@@ -28,19 +28,6 @@ resource "aws_iam_role_policy" "agent_task_policy" {
   policy = data.aws_iam_policy_document.agent_iam_policy.json
 }
 
-// Webhook Task Role
-
-resource "aws_iam_role" "webhook_task_role" {
-  name               = "${var.project_name}-webhook-task-role"
-  assume_role_policy = data.aws_iam_policy_document.ecs_tasks_assume_role.json
-}
-
-resource "aws_iam_role_policy" "webhook_task_policy" {
-  name   = "${var.project_name}-webhook-task-permissions"
-  role   = aws_iam_role.webhook_task_role.id
-  policy = data.aws_iam_policy_document.webhook_iam_policy.json
-}
-
 // ECS Execution Role
 
 resource "aws_iam_role" "ecs_execution_role" {
@@ -71,7 +58,7 @@ resource "aws_iam_role_policy_attachment" "lambda_vpc_access" {
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
 }
 
-// Lmabda Webhook Permissions
+// Lambda Webhook Trigger Permissions
 
 resource "aws_iam_role" "webhook_trigger_role" {
   name               = "${var.project_name}-webhook-trigger-role"
@@ -87,6 +74,25 @@ resource "aws_iam_role_policy" "webhook_trigger_policy" {
 resource "aws_iam_role_policy_attachment" "webhook_trigger_vpc_access" {
   role       = aws_iam_role.webhook_trigger_role.id
   policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+}
+
+// Lambda Webhook Consumer Permissions
+
+resource "aws_iam_role" "webhook_consumer_role" {
+  name               = "${var.project_name}-webhook-consumer-role"
+  assume_role_policy = data.aws_iam_policy_document.lambda_assume_role.json
+}
+
+resource "aws_iam_role_policy" "webhook_consumer_policy" {
+  name   = "${var.project_name}-webhook-consumer-policy"
+  role   = aws_iam_role.webhook_consumer_role.id
+  policy = data.aws_iam_policy_document.webhook_consumer_iam_policy.json
+}
+
+resource "aws_iam_role_policy_attachment" "webhook_consumer_vpc_access" {
+  role       = aws_iam_role.webhook_consumer_role.id
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AWSLambdaVPCAccessExecutionRole"
+
 }
 
 // VPC Flow Logs
