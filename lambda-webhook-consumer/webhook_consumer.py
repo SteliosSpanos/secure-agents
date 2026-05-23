@@ -2,6 +2,8 @@ import os
 import json
 import logging
 import urllib.request
+import hmac
+import hashlib
 import boto3
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
@@ -28,7 +30,7 @@ api_keys_table = dynamodb.Table(api_keys_table_name)
 jobs_table = dynamodb.Table(jobs_table_name)
 
 
-# Whethe Lambda finishes or crashes AWS deletes and changes the visibilty of messages automaticallyn 
+# Whethe Lambda finishes or crashes AWS deletes and changes the visibilty of messages automaticallyn
 def lambda_handler(event, context):
     """
     Processes SQS messages containing job completion info.
@@ -45,47 +47,76 @@ def lambda_handler(event, context):
             job_id = message_body.get("job_id")
 
             if not client_id or not job_id:
-                logger.error("Malformed message: Missing client_id or job_id. MessageID: %s", message_id)
+                logger.error(
+                    "Malformed message: Missing client_id or job_id. MessageID: %s",
+                    message_id,
+                )
                 continue
 
-            webhook_url = get_webhook_url(api_keys_table, client_id)
-            if not webhook_url:
-                logger.warning("No webhook URL found for client %s. Skipping notification.", client_id)
+            webhook_config = get_webhook_config(api_keys_table, client_id)
+            if not webhook_config:
+                logger.warning(
+                    "No active webhook configuration found for client %s. Skipping notification.",
+                    client_id,
+                )
+                continue
+
+            webhook_url = webhook_config.get("webhook_url")
+            webhook_secret = webhook_config.get("webhook_secret")
+
+            if not webhook_url or not webhook_secret:
+                logger.warning(
+                    "Missing webhook_url or webhook_secret for client %s. Skipping notification.",
+                    client_id,
+                )
                 continue
 
             summary = get_job_summary(jobs_table, client_id, job_id)
             if summary is None:
-                logger.warning("Job %s not found for client %s. Skipping notification.", job_id, client_id)
+                logger.warning(
+                    "Job %s not found for client %s. Skipping notification.",
+                    job_id,
+                    client_id,
+                )
                 continue
 
-            send_webhook_notification(webhook_url, client_id, job_id, summary)
-            
-            logger.info("Successfully notified client %s for job %s.", client_id, job_id)
+            send_webhook_notification(
+                webhook_url, webhook_secret, client_id, job_id, summary
+            )
+
+            logger.info(
+                "Successfully notified client %s for job %s.", client_id, job_id
+            )
 
         except Exception:
-            logger.exception("Unexpected error processing SQS record: %s.", messageId)
+            logger.exception("Unexpected error processing SQS record: %s.", message_id)
             batch_item_failures.append({"itemIdentifier": message_id})
 
-    return {
-        "batchItemFailures": batch_item_failures
-    }
+    return {"batchItemFailures": batch_item_failures}
 
 
-def get_webhook_url(table, client_id):
+def get_webhook_config(table, client_id):
     """Retrieves the webhook_url for a specific client_id using get_item"""
     try:
         response = table.get_item(Key={"client_id": client_id})
         item = response.get("Item")
 
         if item and item.get("active", True):
-            return item.get("webhook_url")
+            return {
+                "webhook_url": item.get("webhook_url"),
+                "webhook_secret": item.get("webhook_secret"),
+            }
 
         return None
     except (ClientError, BotoCoreError):
-        logger.exception("Database error while fetching webhook URL for client %s.", client_id)
+        logger.exception(
+            "Database error while fetching webhook URL for client %s.", client_id
+        )
         return None
     except Exception:
-        logger.exception("Unexpected error while fetching webhook URL for client %s.", client_id)
+        logger.exception(
+            "Unexpected error while fetching webhook URL for client %s.", client_id
+        )
         return None
 
 
@@ -107,23 +138,27 @@ def get_job_summary(table, client_id, job_id):
         return None
 
 
-def send_webhook_notification(url, client_id, job_id, summary):
+def send_webhook_notification(url, secret_key, client_id, job_id, summary):
     """Sends a POST request to the client's webhook URL"""
     payload = {
         "event": "JOB_COMPLETED",
         "client_id": client_id,
         "job_id": job_id,
         "status": "COMPLETED",
-        "summary": summary
+        "summary": summary,
     }
-    
+
     data = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(
-        url,
-        data=data,
-        headers={"Content-Type": "application/json"},
-        method="POST"
-    )
+
+    signature = hmac.new(secret_key.encode("utf-8"), data, hashlib.sha256).hexdigest()
+
+    headers = {
+        "Content-Type": "application/json",
+        "X-SecureAgents-Signature": signature,
+        "X-Webhook-Delivery-ID": f"evt_{job_id}",
+    }
+
+    req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
     try:
         with urllib.request.urlopen(req, timeout=10) as response:
@@ -131,7 +166,11 @@ def send_webhook_notification(url, client_id, job_id, summary):
             if status >= 200 and status < 300:
                 return True
             else:
-                logger.error("Webhook delivery failed with status %d for client %s.", status, client_id)
+                logger.error(
+                    "Webhook delivery failed with status %d for client %s.",
+                    status,
+                    client_id,
+                )
                 raise Exception(f"Webhook returned status {status}")
     except Exception:
         logger.exception("Failed to send webhook to %s.", url)
