@@ -138,7 +138,7 @@ resource "aws_lambda_function" "webhook_consumer" {
   function_name    = "${var.project_name}-webhook-consumer"
   role             = aws_iam_role.webhook_consumer_role.arn
   handler          = "webhook_consumer.lambda_handler"
-  runtime          = "python3.11"
+  runtime          = "python3.13"
   timeout          = 15
   memory_size      = 256
 

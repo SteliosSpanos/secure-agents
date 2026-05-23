@@ -124,7 +124,7 @@ resource "aws_lambda_function" "webhook_trigger" {
   function_name    = "${var.project_name}-webhook-trigger"
   role             = aws_iam_role.webhook_trigger_role.arn
   handler          = "webhook_trigger.lambda_handler"
-  runtime          = "python3.11"
+  runtime          = "python3.13"
   timeout          = 15
   memory_size      = 256
 
@@ -146,9 +146,21 @@ resource "aws_lambda_function" "webhook_trigger" {
 }
 
 resource "aws_lambda_event_source_mapping" "webhook_trigger" {
-  event_source_arn       = aws_dynamodb_table.jobs.stream_arn
-  function_name          = aws_lambda_function.webhook_trigger.arn
-  starting_position      = "LATEST" // Only new changes from now on
-  batch_size             = 10       // The Lambda event will contain up to 10 records
-  maximum_retry_attempts = 3
+  event_source_arn               = aws_dynamodb_table.jobs.stream_arn
+  function_name                  = aws_lambda_function.webhook_trigger.arn
+  starting_position              = "LATEST" // Only new changes from now on
+  batch_size                     = 10       // The Lambda event will contain up to 10 records
+  maximum_retry_attempts         = 3
+  bisect_batch_on_function_error = true // Isolates poison pill records
+
+  filter_criteria {
+    filter {
+      pattern = jsonencode({
+        eventName = ["MODIFY"]
+        dynamodb = {
+          NewImage = { status = { S = ["COMPLETED"] } }
+        }
+      })
+    }
+  }
 }
