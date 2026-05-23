@@ -31,6 +31,11 @@ resource "aws_sqs_queue" "agent_dlq" {
   kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
 
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue",
+    sourceQueueArns   = [aws_sqs_queue.agent_queue.arn]
+  })
+
   tags = {
     Name = "${var.project_name}-dlq"
   }
@@ -62,7 +67,7 @@ resource "aws_sqs_queue" "agent_queue" {
 
 resource "aws_sqs_queue_policy" "agent_queue_policy" {
   queue_url = aws_sqs_queue.agent_queue.id
-  policy    = data.aws_iam_policy_document.sqs_queue_policy.json
+  policy    = data.aws_iam_policy_document.agent_queue_policy.json
 }
 
 
@@ -75,6 +80,12 @@ resource "aws_sqs_queue" "webhook_dlq" {
   message_retention_seconds         = var.sqs_dlq_retention_days * 86400 // 14 days (max allowed)
   kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
+
+  // Security best practice: only allow the specific source queue to use this DLQ
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue",
+    sourceQueueArns   = [aws_sqs_queue.webhook_queue.arn]
+  })
 
   tags = {
     Name = "${var.project_name}-webhook-dlq"
@@ -103,6 +114,67 @@ resource "aws_sqs_queue" "webhook_queue" {
     Name = "${var.project_name}-webhook-queue"
   }
 }
+
+resource "aws_sqs_queue_policy" "webhook_queue_policy" {
+  queue_url = aws_sqs_queue.webhook_queue.id
+  policy    = data.aws_iam_policy_document.webhook_queue_policy.json
+}
+
+
+
+
+// Webhook Consumer Lambda
+
+data "archive_file" "webhook_consumer_zip" {
+  type        = "zip"
+  source_file = "../lambda-webhook-consumer/webhook_consumer.py"
+  output_path = "webhook_consumer.zip"
+}
+
+resource "aws_lambda_function" "webhook_consumer" {
+  description      = "Lambda Webhook Consumer to send result to client"
+  filename         = data.archive_file.webhook_consumer_zip.output_path
+  source_code_hash = data.archive_file.webhook_consumer_zip.output_base64sha256
+  function_name    = "${var.project_name}-webhook-consumer"
+  role             = aws_iam_role.webhook_consumer_role.arn
+  handler          = "webhook_consumer.lambda_handler"
+  runtime          = "python3.11"
+  timeout          = 15
+  memory_size      = 256
+
+  depends_on = [aws_cloudwatch_log_group.webhook_consumer_logs]
+
+  vpc_config {
+    subnet_ids = [
+      aws_subnet.agents_private_subnet_1.id,
+      aws_subnet.agents_private_subnet_2.id
+    ]
+    security_group_ids = [aws_security_group.webhook_consumer_sg.id]
+  }
+
+  environment {}
+}
+
+resource "aws_lambda_event_source_mapping" "webhook_consumer" {
+  event_source_arn                   = aws_sqs_queue.webhook_queue.arn
+  function_name                      = aws_lambda_function.webhook_consumer.arn
+  enabled                            = true
+  batch_size                         = 10
+  maximum_batching_window_in_seconds = 10
+
+  // Prevents the Lambda from scaling out too fast and overwhelming external webhook endpoints
+  scaling_config {
+    maximum_concurrency = 5
+  }
+
+  destination_config {
+    on_failure {
+      destination_arn = aws_sqs_queue.webhook_dlq.arn
+    }
+  }
+}
+
+
 
 
 // S3 Event Nofification
