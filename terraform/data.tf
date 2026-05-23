@@ -231,7 +231,8 @@ data "aws_iam_policy_document" "shared_kms_policy" {
       identifiers = [
         aws_iam_role.api_task_role.arn,
         aws_iam_role.agent_task_role.arn,
-        aws_iam_role.webhook_trigger_role.arn
+        aws_iam_role.webhook_trigger_role.arn,
+        aws_iam_role.webhook_consumer_role.arn
       ]
     }
     actions = [
@@ -338,8 +339,11 @@ data "aws_iam_policy_document" "api_keys_table_kms_policy" {
     sid    = "KeyUsage"
     effect = "Allow"
     principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.authorizer_role.arn]
+      type = "AWS"
+      identifiers = [
+        aws_iam_role.authorizer_role.arn,
+        aws_iam_role.webhook_consumer_role.arn
+      ]
     }
     actions = [
       "kms:Decrypt",
@@ -374,7 +378,8 @@ data "aws_iam_policy_document" "jobs_table_kms_policy" {
       identifiers = [
         aws_iam_role.api_task_role.arn,
         aws_iam_role.agent_task_role.arn,
-        aws_iam_role.webhook_trigger_role.arn
+        aws_iam_role.webhook_trigger_role.arn,
+        aws_iam_role.webhook_consumer_role.arn
       ]
     }
     actions = [
@@ -697,29 +702,6 @@ data "aws_iam_policy_document" "agent_iam_policy" {
   }
 }
 
-// Webhook Task Policy 
-
-data "aws_iam_policy_document" "webhook_iam_policy" {
-  statement {
-    effect = "Allow"
-    actions = [
-      "sqs:ReceiveMessage",
-      "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes"
-    ]
-    resources = [aws_sqs_queue.webhook_queue.arn]
-  }
-
-  statement {
-    effect = "Allow"
-    actions = [
-      "kms:Decrypt",
-      "kms:GenerateDataKey*"
-    ]
-    resources = [aws_kms_key.shared.arn]
-  }
-}
-
 
 
 
@@ -727,7 +709,7 @@ data "aws_iam_policy_document" "webhook_iam_policy" {
 
 // SQS Queue Policy
 
-data "aws_iam_policy_document" "sqs_queue_policy" {
+data "aws_iam_policy_document" "sqs_agent_queue_policy" {
   statement {
     sid    = "AllowS3ToSendMessage"
     effect = "Allow"
@@ -749,25 +731,39 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
     }
   }
 
-  /*
-
-  We dont need this statement becuase we already granted the Agent Task Role the permissions
-
   statement {
-    sid    = "AllowComputeUsage"
-    effect = "Allow"
+    sid    = "EnforceTLSOnly"
+    effect = "Deny"
     principals {
-      type        = "AWS"
-      identifiers = [aws_iam_role.agent_task_role.arn]
+      type        = "*"
+      identifiers = ["*"]
     }
-    actions = [
-      "sqs:ReceiveMessage",
-      "sqs:DeleteMessage",
-      "sqs:GetQueueAttributes",
-      "sqs:ChangeMessageVisibility"
-    ]
+    actions   = ["sqs:*"]
     resources = [aws_sqs_queue.agent_queue.arn]
-  }*/
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
+}
+
+data "aws_iam_policy_document" "sqs_webhook_queue_policy" {
+  statement {
+    sid    = "EnforceTLSOnly"
+    effect = "Deny"
+    principals {
+      type        = "*"
+      identifiers = ["*"]
+    }
+    actions   = ["sqs:*"]
+    resources = [aws_sqs_queue.webhook_queue.arn]
+    condition {
+      test     = "Bool"
+      variable = "aws:SecureTransport"
+      values   = ["false"]
+    }
+  }
 }
 
 
@@ -775,7 +771,7 @@ data "aws_iam_policy_document" "sqs_queue_policy" {
 
 
 
-// Lambda (for API Gateway)
+// Lambda Authorizer
 
 data "aws_iam_policy_document" "lambda_assume_role" {
   statement {
@@ -814,7 +810,7 @@ data "aws_iam_policy_document" "authorizer_lambda_iam_policy" {
   }
 }
 
-// Lambda (for Webhook)
+// Lambda Webhook Trigger
 
 data "aws_iam_policy_document" "webhook_trigger_iam_policy" {
   statement {
@@ -855,6 +851,56 @@ data "aws_iam_policy_document" "webhook_trigger_iam_policy" {
     resources = [
       aws_cloudwatch_log_group.webhook_trigger_logs.arn,
       "${aws_cloudwatch_log_group.webhook_trigger_logs.arn}:*"
+    ]
+  }
+}
+
+// Lambda Webhook Consumer
+
+data "aws_iam_policy_document" "webhook_consumer_iam_policy" {
+  statement {
+    effect = "Allow"
+    actions = [
+      "dynamodb:GetItem",
+      "dynamodb:Query"
+    ]
+    resources = [
+      aws_dynamodb_table.jobs.arn,
+      aws_dynamodb_table.api_keys.arn,
+      "${aws_dynamodb_table.api_keys.arn}/index/*"
+    ]
+  }
+
+  statement {
+    effect  = "Allow"
+    actions = ["kms:Decrypt"]
+    resources = [
+      aws_kms_key.shared.arn,
+      aws_kms_key.jobs_table.arn,
+      aws_kms_key.api_keys_table.arn
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "sqs:ReceiveMessage",
+      "sqs:DeleteMessage",
+      "sqs:GetQueueAttributes",
+      "sqs:ChangeMessageVisibility"
+    ]
+    resources = [aws_sqs_queue.webhook_queue.arn]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "logs:CreateLogStream",
+      "logs:PutLogEvents"
+    ]
+    resources = [
+      aws_cloudwatch_log_group.webhook_consumer_logs.arn,
+      "${aws_cloudwatch_log_group.webhook_consumer_logs.arn}:*"
     ]
   }
 }
