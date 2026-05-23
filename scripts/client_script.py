@@ -150,7 +150,7 @@ if __name__ == "__main__":
                 sys.exit(0)
             else:
                 print(
-                    f"ERROR: API key not found or deactivation failed.", file=sys.stderr
+                    "ERROR: API key not found or deactivation failed.", file=sys.stderr
                 )
                 sys.exit(1)
     except Exception as e:
