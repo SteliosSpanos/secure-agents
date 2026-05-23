@@ -30,7 +30,12 @@ resource "aws_vpc_endpoint_policy" "dynamodb_policy" {
 resource "aws_dynamodb_table" "api_keys" {
   name         = "agents_APIKeys"
   billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "api_key"
+  hash_key     = "client_id"
+
+  attribute {
+    name = "client_id"
+    type = "S"
+  }
 
   attribute {
     name = "api_key"
