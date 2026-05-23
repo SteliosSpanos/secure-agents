@@ -11,6 +11,7 @@ import boto3
 import logging
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
+from boto3.dynamodb.conditions import Key
 
 
 logger = logging.getLogger(__name__)
@@ -56,25 +57,27 @@ def lambda_handler(event, context):
     hashed_key = hashlib.sha256(api_key.encode("utf-8")).hexdigest()
 
     try:
-        response = api_keys_table.get_item(
-            Key={"api_key": hashed_key},
-            ConsistentRead=True,  # Consistent read means we get the latest data from DynamoDB, not a potentially stale cached version
+        response = api_keys_table.query(
+            IndexName="ApiKeyIndex",
+            KeyConditionExpression=Key("api_key").eq(hashed_key),
+            Limit=1
         )
-        item = response.get("Item")
+        items = response.get("Items", [])
 
-        if not item:
-            logger.warning(f"Access denied: Key hash {hashed_key[:8]}...")
+        if not items:
+            logger.warning("Access denied: Key hash %s...", hashed_key[:8])
             return {"isAuthorized": False}
 
+        item = items[0]
         is_active = item.get("active", False)
 
         if is_active:
             client_id = item.get("client_id", "unknown_client")
-            logger.info(f"Authorized client: {client_id}.")
+            logger.info("Authorized client: %s.", client_id)
 
             return {"isAuthorized": True, "context": {"client_id": client_id}}
 
-        logger.warning(f"Invalid or inactive API key: {hashed_key[:8]}...")
+        logger.warning("Invalid or inactive API key: %s...", hashed_key[:8])
         return {"isAuthorized": False}
     except (ClientError, BotoCoreError):
         logger.exception("AWS Infrastructure error occurred during authorization.")
