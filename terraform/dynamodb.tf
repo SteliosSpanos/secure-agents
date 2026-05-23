@@ -69,7 +69,7 @@ resource "aws_dynamodb_table_index" "api_keys_index" {
 
   projection {
     projection_type    = "INCLUDE"
-    non_key_attributes = ["client_id", "active"]
+    non_key_attributes = ["active"]
   }
 }
 

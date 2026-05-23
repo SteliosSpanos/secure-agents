@@ -102,7 +102,10 @@ resource "aws_lambda_function" "authorizer" {
   timeout          = 15
   memory_size      = 256
 
-  depends_on = [aws_cloudwatch_log_group.authorizer_logs]
+  depends_on = [
+    aws_cloudwatch_log_group.authorizer_logs,
+    aws_dynamodb_table_index.api_keys_index
+  ]
 
   vpc_config {
     subnet_ids = [
