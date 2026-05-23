@@ -139,7 +139,7 @@ resource "aws_lambda_function" "webhook_consumer" {
   role             = aws_iam_role.webhook_consumer_role.arn
   handler          = "webhook_consumer.lambda_handler"
   runtime          = "python3.13"
-  timeout          = 15
+  timeout          = 30
   memory_size      = 256
 
   depends_on = [aws_cloudwatch_log_group.webhook_consumer_logs]
@@ -152,7 +152,12 @@ resource "aws_lambda_function" "webhook_consumer" {
     security_group_ids = [aws_security_group.webhook_consumer_sg.id]
   }
 
-  environment {}
+  environment {
+    variables = {
+      API_KEYS_TABLE = aws_dynamodb_table.api_keys.name
+      JOBS_TABLE     = aws_dynamodb_table.jobs.name
+    }
+  }
 }
 
 resource "aws_lambda_event_source_mapping" "webhook_consumer" {
@@ -161,6 +166,7 @@ resource "aws_lambda_event_source_mapping" "webhook_consumer" {
   enabled                            = true
   batch_size                         = 10
   maximum_batching_window_in_seconds = 10
+  function_response_types            = ["ReportBatchItemFailures"]
 
   // Prevents the Lambda from scaling out too fast and overwhelming external webhook endpoints
   scaling_config {
