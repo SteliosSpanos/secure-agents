@@ -62,6 +62,17 @@ resource "aws_dynamodb_table" "api_keys" {
   }
 }
 
+resource "aws_dynamodb_table_index" "api_keys_index" {
+  table_name = aws_dynamodb_table.api_keys.name
+  name       = "ApiKeyIndex"
+  hash_key   = "api_key"
+
+  projection {
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["client_id", "active"]
+  }
+}
+
 resource "aws_dynamodb_resource_policy" "api_keys_policy" {
   resource_arn = aws_dynamodb_table.api_keys.arn
   policy       = data.aws_iam_policy_document.api_keys_table_policy.json
