@@ -18,6 +18,30 @@ resource "aws_vpc" "agents_vpc" {
   }
 }
 
+// Public Subnets
+
+resource "aws_subnet" "agents_public_subnet_1" {
+  vpc_id                  = aws_vpc.agents_vpc.id
+  cidr_block              = var.public_subnet_1_cidr
+  map_public_ip_on_launch = true
+  availability_zone       = data.aws_availability_zones.available.names[0]
+
+  tags = {
+    Name = "${var.project_name}-public-subnet-1"
+  }
+}
+
+resource "aws_subnet" "agents_public_subnet_2" {
+  vpc_id                  = aws_vpc.agents_vpc.id
+  cidr_block              = var.public_subnet_2_cidr
+  map_public_ip_on_launch = true
+  availability_zone       = data.aws_availability_zones.available.names[1]
+
+  tags = {
+    Name = "${var.project_name}-public-subnet-2"
+  }
+}
+
 // Private Subnets 
 
 resource "aws_subnet" "agents_private_subnet_1" {
@@ -40,6 +64,16 @@ resource "aws_subnet" "agents_private_subnet_2" {
   }
 }
 
+// IGW
+
+resource "aws_internet_gateway" "agents_igw" {
+  vpc_id = aws_vpc.agents_vpc.id
+
+  tags = {
+    Name = "${var.project_name}-igw"
+  }
+}
+
 // Private Route Table
 
 resource "aws_route_table" "agents_private_rt" {
@@ -47,6 +81,16 @@ resource "aws_route_table" "agents_private_rt" {
 
   tags = {
     Name = "${var.project_name}-private-rt"
+  }
+}
+
+// Public Route Table
+
+resource "aws_route_table" "agents_public_rt" {
+  vpc_id = aws_vpc.agents_vpc.id
+
+  tags = {
+    Name = "${var.project_name}-public-rt"
   }
 }
 
@@ -60,6 +104,30 @@ resource "aws_route_table_association" "agents_private_assoc_1" {
 resource "aws_route_table_association" "agents_private_assoc_2" {
   subnet_id      = aws_subnet.agents_private_subnet_2.id
   route_table_id = aws_route_table.agents_private_rt.id
+}
+
+resource "aws_route_table_association" "agents_public_assoc_1" {
+  subnet_id      = aws_subnet.agents_public_subnet_1.id
+  route_table_id = aws_route_table.agents_public_rt.id
+}
+
+resource "aws_route_table_association" "agents_public_assoc_2" {
+  subnet_id      = aws_subnet.agents_public_subnet_2.id
+  route_table_id = aws_route_table.agents_public_rt.id
+}
+
+// Routes
+
+resource "aws_route" "route_to_igw" {
+  route_table_id         = aws_route_table.agents_public_rt.id
+  destination_cidr_block = "0.0.0.0/0"
+  gateway_id             = aws_internet_gateway.agents_igw.id
+}
+
+resource "aws_route" "private_to_nat" {
+  route_table_id         = aws_route_table.agents_private_rt.id
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_instance.nat_instance.primary_network_interface_id
 }
 
 // These endpoints cover the 'hidden' dependencies required for Fargate
