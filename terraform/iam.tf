@@ -97,6 +97,42 @@ resource "aws_iam_role_policy_attachment" "webhook_consumer_vpc_access" {
 
 }
 
+// EC2 Jump Box
+
+resource "aws_iam_role" "jump_box_role" {
+  name               = "${var.project_name}-jump-box-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
+resource "aws_iam_role_policy" "jump_box_policy" {
+  name   = "${var.project_name}-jump-box-policy"
+  role   = aws_iam_role.jump_box_role.id
+  policy = data.aws_iam_policy_document.instance_iam_policy.json
+}
+
+resource "aws_iam_instance_profile" "jump_box" {
+  name = "${var.project_name}-jump-box-profile"
+  role = aws_iam_role.jump_box_role.id
+}
+
+// EC2 NAT Instance
+
+resource "aws_iam_role" "nat_instance_role" {
+  name               = "${var.project_name}-nat-instance-role"
+  assume_role_policy = data.aws_iam_policy_document.ec2_assume_role.json
+}
+
+resource "aws_iam_role_policy" "nat_instance_policy" {
+  name   = "${var.project_name}-nat-instance-policy"
+  role   = aws_iam_role.nat_instance_role.id
+  policy = data.aws_iam_policy_document.instance_iam_policy.json
+}
+
+resource "aws_iam_instance_profile" "nat_instance" {
+  name = "${var.project_name}-nat-instance-profile"
+  role = aws_iam_role.nat_instance_role.id
+}
+
 // VPC Flow Logs
 
 resource "aws_iam_role" "vpc_flow_log" {
