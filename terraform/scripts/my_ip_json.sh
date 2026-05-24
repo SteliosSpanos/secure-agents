@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script that gets the IP of the host machine
+# Script that gets the public IP of the host machine
 
 ip=""
 
