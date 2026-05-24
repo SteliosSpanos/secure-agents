@@ -79,3 +79,21 @@ resource "aws_kms_alias" "waf_log" {
   name          = "alias/${var.project_name}-waf-log"
   target_key_id = aws_kms_key.waf_log.key_id
 }
+
+// EBS Key
+
+resource "aws_kms_key" "ebs" {
+  description             = "${var.project_name}-ebs-kms-key"
+  deletion_window_in_days = 30
+  enable_key_rotation     = true
+  policy                  = data.aws_iam_policy_document.ebs_kms_policy.json
+
+  tags = {
+    Name = "${var.project_name}-ebs-kms-key"
+  }
+}
+
+resource "aws_kms_alias" "ebs" {
+  name          = "alias/${var.project_name}-ebs"
+  target_key_id = aws_kms_key.ebs.key_id
+}
