@@ -110,12 +110,36 @@ resource "aws_cloudwatch_log_group" "waf_logs" {
 // API Gateway Logs
 
 resource "aws_cloudwatch_log_group" "api_gateway_logs" {
-  name              = "/aws/apigateway/${var.project_name}-logs"
+  name              = "/aws/apigateway/${var.project_name}-apigw"
   retention_in_days = var.log_retention_days
   kms_key_id        = aws_kms_key.shared.arn
 
   tags = {
     Name = "${var.project_name}-apigw-logs"
+  }
+}
+
+// Jump Box Logs
+
+resource "aws_cloudwatch_log_group" "jump_box_logs" {
+  name              = "/aws/ec2/${var.project_name}-jump-box"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.shared.arn
+
+  tags = {
+    Name = "${var.project_name}-jump-box-logs"
+  }
+}
+
+// NAT Instance Logs
+
+resource "aws_cloudwatch_log_group" "nat_instance_logs" {
+  name              = "/aws/ec2/${var.project_name}-nat-instance"
+  retention_in_days = var.log_retention_days
+  kms_key_id        = aws_kms_key.shared.arn
+
+  tags = {
+    Name = "${var.project_name}-nat-instance-logs"
   }
 }
 
