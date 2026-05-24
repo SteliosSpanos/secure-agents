@@ -30,14 +30,26 @@ variable "vpc_cidr" {
 
 variable "private_subnet_1_cidr" {
   type        = string
-  default     = "10.0.2.0/24"
+  default     = "10.0.3.0/24"
   description = "Private subnet 1 CIDR block"
 }
 
 variable "private_subnet_2_cidr" {
   type        = string
-  default     = "10.0.3.0/24"
+  default     = "10.0.4.0/24"
   description = "Private subnet 2 CIDR"
+}
+
+variable "public_subnet_1_cidr" {
+  type        = string
+  default     = "10.0.1.0/24"
+  description = "Public subnet 1 CIDR"
+}
+
+variable "public_subnet_2_cidr" {
+  type        = string
+  default     = "10.0.2.0/24"
+  description = "Public subnet 2 CIDR"
 }
 
 variable "sqs_retention_days" {
@@ -74,4 +86,22 @@ variable "allowed_origins" {
   type        = string
   default     = "http://localhost:3000"
   description = "Allowed origins for CORS"
+}
+
+variable "public_key_path" {
+  type        = string
+  default     = ".shh/agents-key.pem.pub"
+  description = "Path to the public key file"
+}
+
+variable "instance_types" {
+  type = object({
+    jump_box     = string
+    nat_instance = string
+  })
+  default = {
+    jump_box     = "t3.micro"
+    nat_instance = "t3.micro"
+  }
+  description = "EC2 instance types for each instance"
 }
