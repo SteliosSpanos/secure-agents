@@ -13,7 +13,11 @@ resource "aws_vpc_endpoint" "dynamodb" {
   vpc_id            = aws_vpc.agents_vpc.id
   service_name      = "com.amazonaws.${var.region}.dynamodb"
   vpc_endpoint_type = "Gateway"
-  route_table_ids   = [for rt in aws_route_table.agents_private_rt : rt.id]
+  route_table_ids = [
+    aws_route_table.agents_private_rt_1.id,
+    aws_route_table.agents_private_rt_2.id,
+    aws_route_table.agents_public_rt.id
+  ]
 
   tags = {
     Name = "${var.project_name}-dynamodb-endpoint"
