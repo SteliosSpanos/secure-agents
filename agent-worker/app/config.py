@@ -1,26 +1,35 @@
+from functools import lru_cache
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field
 
 
 class Settings(BaseSettings):
-    aws_region: str = Field(default="eu-central-1", validation_alias="AWS_REGION")
+    # AWS Config
+    aws_region: str = Field(default="eu-central-1", alias="AWS_REGION")
+    sqs_queue_url: str = Field(..., alias="SQS_QUEUE_URL")
+    jobs_table_name: str = Field(..., alias="DYNAMODB_JOBS_TABLE")
 
-    sqs_queue_url: str = Field(default="", validation_alias="SQS_QUEUE_URL")
-
+    # AI Model Settings
     bedrock_model_id: str = Field(
         default="anthropic.claude-3-haiku-20240307-v1:0",
-        validation_alias="BEDROCK_MODEL_ID",
+        alias="BEDROCK_MODEL_ID",
     )
 
-    jobs_table_name: str = Field(
-        default="agents_Jobs", validation_alias="DYNAMODB_JOBS_TABLE"
+    # App Settings
+    max_file_size_mb: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
+    char_limit: int = Field(default=15000, alias="CHAR_LIMIT")
+
+    model_config = SettingsConfigDict(
+        env_file=".env",
+        extra="ignore",
+        env_ignore_empty=True
     )
 
-    max_file_size_mb: int = Field(default=50, validation_alias="MAX_FILE_SIZE_MB")
 
-    char_limit: int = Field(default=15000, validation_alias="CHAR_LIMIT")
+# Useful for testing
+@lru_cache
+def get_settings() -> Settings:
+    return Settings()
 
-    model_config = SettingsConfigDict(env_file=".env", extra="ignore")
 
-
-settings = Settings()
+settings = get_settings()
