@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, status, Depends, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import aws_client
-from .config import settings
+from .config import settings, get_settings
 from .schemas import UploadResponse, JobStatusResponse
 
 # Setting up the logging config
@@ -29,7 +29,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[origin.strip() for origin in settings.allowed_origins.split(",")],
+    allow_origins=settings.allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "x-api-key"],
