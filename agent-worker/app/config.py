@@ -20,9 +20,7 @@ class Settings(BaseSettings):
     char_limit: int = Field(default=15000, alias="CHAR_LIMIT")
 
     model_config = SettingsConfigDict(
-        env_file=".env",
-        extra="ignore",
-        env_ignore_empty=True
+        env_file=".env", extra="ignore", env_ignore_empty=True
     )
 
 
