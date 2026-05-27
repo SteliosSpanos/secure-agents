@@ -6,7 +6,7 @@ from fastapi import FastAPI, HTTPException, status, Depends, Body, Header
 from fastapi.middleware.cors import CORSMiddleware
 
 from . import aws_client
-from .config import settings, get_settings
+from .config import settings
 from .schemas import UploadResponse, JobStatusResponse
 
 # Setting up the logging config
