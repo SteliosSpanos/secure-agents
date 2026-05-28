@@ -22,7 +22,7 @@ logger = logging.getLogger("worker_daemon")
 
 
 aws_config = Config(
-    region_name=settings.aws_region,
+    region_name=settings.AWS_REGION,
     retries={"max_attempts": 3, "mode": "standard"},
     connect_timeout=5,  # If we cant establish a TCP connection in 5 sec, throw an error
     read_timeout=300,  # The amount of time the SDK will wait for a response before timing out.
@@ -35,7 +35,7 @@ try:
     s3 = session.client("s3", config=aws_config)
     bedrock = session.client("bedrock-runtime", config=aws_config)
     dynamodb = session.resource("dynamodb", config=aws_config)
-    jobs_table = dynamodb.Table(settings.jobs_table_name)
+    jobs_table = dynamodb.Table(settings.JOBS_TABLE_NAME)
 except Exception:
     logger.exception("Failed to initialize AWS session.")
     sys.exit(1)
@@ -63,7 +63,7 @@ def handle_sigterm(*args):
 
             # Make the SQS message visible immediately so another worker can pick it up
             sqs.change_message_visibility(
-                QueueUrl=settings.sqs_queue_url,
+                QueueUrl=settings.SQS_QUEUE_URL,
                 ReceiptHandle=active_job["receipt_handle"],
                 VisibilityTimeout=0,
             )
@@ -84,7 +84,7 @@ def extend_sqs_visibility(receipt_handle: str, timeout: int = 600):
     """Extends the SQS visibility timeout to prevent other workers from taking this job"""
     try:
         sqs.change_message_visibility(
-            QueueUrl=settings.sqs_queue_url,
+            QueueUrl=settings.SQS_QUEUE_URL,
             ReceiptHandle=receipt_handle,
             VisibilityTimeout=timeout,
         )
@@ -104,7 +104,7 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
         head = s3.head_object(Bucket=bucket, Key=decoded_key)
         content_length = head.get("ContentLength", 0)
 
-        max_bytes = settings.max_file_size_mb * 1024 * 1024
+        max_bytes = settings.MAX_FILE_SIZE_MB * 1024 * 1024
         if content_length > max_bytes:
             raise ValueError("PDF exceeds maximum allowed size")
     except (ClientError, BotoCoreError):
@@ -136,7 +136,7 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
             if extracted:
                 text += extracted + "\n"
 
-            if len(text) > (settings.char_limit * 1.2):
+            if len(text) > (settings.CHAR_LIMIT * 1.2):
                 logger.warning(
                     f"Extracted text limit reached for {decoded_key}. Truncating."
                 )
@@ -168,12 +168,13 @@ def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, b
     if not document_text:
         raise ValueError("PDF contained no readable text.")
 
-    is_truncated = len(document_text) > settings.char_limit
+    char_limit = settings.CHAR_LIMIT
+    is_truncated = len(document_text) > char_limit
     if is_truncated:
         logger.warning(
-            f"Document {key} exceeds limit. Truncating to {settings.char_limit} chars."
+            f"Document {key} exceeds limit. Truncating to {char_limit} chars."
         )
-        document_text = document_text[: settings.char_limit]
+        document_text = document_text[:char_limit]
 
     extend_sqs_visibility(receipt_handle)
 
@@ -205,7 +206,7 @@ def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, b
     ]
 
     response = bedrock.converse(
-        modelId=settings.bedrock_model_id,
+        modelId=settings.BEDROCK_MODEL_ID,
         system=system_prompt,
         messages=messages,
         inferenceConfig={"maxTokens": 512, "temperature": 0.3, "topP": 0.9},
@@ -275,7 +276,7 @@ def main():
     while not shutdown_flag:
         try:
             response = sqs.receive_message(
-                QueueUrl=settings.sqs_queue_url,
+                QueueUrl=settings.SQS_QUEUE_URL,
                 MaxNumberOfMessages=1,
                 WaitTimeSeconds=20,
             )
@@ -367,7 +368,7 @@ def main():
                             )
 
                     sqs.delete_message(
-                        QueueUrl=settings.sqs_queue_url, ReceiptHandle=receipt_handle
+                        QueueUrl=settings.SQS_QUEUE_URL, ReceiptHandle=receipt_handle
                     )
                 except (ClientError, BotoCoreError):
                     logger.warning(
@@ -376,7 +377,7 @@ def main():
                 except Exception:
                     logger.exception("Unexpected error processing message body.")
                     sqs.delete_message(
-                        QueueUrl=settings.sqs_queue_url, ReceiptHandle=receipt_handle
+                        QueueUrl=settings.SQS_QUEUE_URL, ReceiptHandle=receipt_handle
                     )
         except (ClientError, BotoCoreError):
             logger.exception("Critical SQS Polling error.")
