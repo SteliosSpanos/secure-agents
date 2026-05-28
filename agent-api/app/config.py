@@ -6,20 +6,18 @@ from pydantic import Field
 
 class Settings(BaseSettings):
     # AWS Config
-    aws_region: str = Field(default="eu-central-1", alias="AWS_REGION")
-    s3_bucket_name: str = Field(..., alias="S3_BUCKET_NAME")
-    jobs_table_name: str = Field(..., alias="DYNAMODB_JOBS_TABLE")
+    AWS_REGION: str = Field(default="eu-central-1", alias="AWS_REGION")
+    S3_BUCKET_NAME: str = Field(..., alias="S3_BUCKET_NAME")
+    JOBS_TABLE_NAME: str = Field(..., alias="DYNAMODB_JOBS_TABLE")
 
     # Security
-    # We use '...' to indicate this MUST be provided (e.g. by ECS/Terraform)
-    kms_key_arn: str = Field(..., alias="KMS_KEY_ARN")
+    KMS_KEY_ARN: str = Field(..., alias="KMS_KEY_ARN")
 
     # App Settings
-    max_file_size_mb: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
+    MAX_FILE_SIZE_MB: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
 
-    # Use a list for origins to make CORS setup easier
-    # Pydantic will automatically turn a comma-separated string from ECS into a list!
-    allowed_origins: List[str] = Field(
+    # Pydantic will automatically turn a comma-separated string from ECS into a list
+    ALLOWED_ORIGINS: List[str] = Field(
         default=["http://localhost:3000"], alias="ALLOWED_ORIGINS"
     )
 

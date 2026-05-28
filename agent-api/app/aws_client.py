@@ -18,7 +18,7 @@ logger.addHandler(logging.NullHandler())
 # Locally it uses ~/.aws/credentials
 
 aws_config = Config(
-    region_name=settings.aws_region,
+    region_name=settings.AWS_REGION,
     retries={"max_attempts": 3, "mode": "standard"},
     connect_timeout=5,
     read_timeout=15,
@@ -46,7 +46,7 @@ try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
     dynamodb = session.resource("dynamodb", config=aws_config)
-    jobs_table = dynamodb.Table(settings.jobs_table_name)
+    jobs_table = dynamodb.Table(settings.JOBS_TABLE_NAME)
 except Exception:
     logger.exception("Failed to initialize AWS Session.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
@@ -75,19 +75,19 @@ def generate_presigned_upload(client_id: str, job_id: str, object_key: str) -> D
     """Generates a secure S3 presigned URL (acts as a ticket)"""
     try:
         response = s3_client.generate_presigned_post(
-            Bucket=settings.s3_bucket_name,
+            Bucket=settings.S3_BUCKET_NAME,
             Key=object_key,
             Fields={
                 "x-amz-server-side-encryption": "aws:kms",
-                "x-amz-server-side-encryption-aws-kms-key-id": settings.kms_key_arn,
+                "x-amz-server-side-encryption-aws-kms-key-id": settings.KMS_KEY_ARN,
                 "x-amz-meta-client-id": client_id,
                 "x-amz-meta-job-id": job_id,
                 "Content-Type": "application/pdf",
             },
             Conditions=[
-                ["content-length-range", 1, settings.max_file_size_mb * 1024 * 1024],
+                ["content-length-range", 1, settings.MAX_FILE_SIZE_MB * 1024 * 1024],
                 {"x-amz-server-side-encryption": "aws:kms"},
-                {"x-amz-server-side-encryption-aws-kms-key-id": settings.kms_key_arn},
+                {"x-amz-server-side-encryption-aws-kms-key-id": settings.KMS_KEY_ARN},
                 {"x-amz-meta-client-id": client_id},
                 {"x-amz-meta-job-id": job_id},
                 ["starts-with", "$Content-Type", "application/pdf"],
