@@ -174,3 +174,146 @@ resource "aws_ecs_service" "worker_service" {
 
   depends_on = [null_resource.worker_bootstrap_image]
 }
+
+
+// EC2 Jump Box
+
+resource "aws_key_pair" "agents_key" {
+  key_name   = "${var.project_name}-key"
+  public_key = file("${path.module}/${var.public_key_path}")
+
+  tags = {
+    Name = "${var.project_name}-key"
+  }
+}
+
+
+resource "aws_instance" "jump_box" {
+  for_each = {
+    "az1" = aws_subnet.agents_public_subnet_1.id
+    "az2" = aws_subnet.agents_public_subnet_2.id
+  }
+
+  ami                         = data.aws_ami.amazon_linux_2023.id
+  instance_type               = var.instance_types.jump_box
+  associate_public_ip_address = true
+  subnet_id                   = each.value
+  vpc_security_group_ids      = [aws_security_group.jump_box.id]
+  iam_instance_profile        = aws_iam_instance_profile.jump_box.name
+  key_name                    = aws_key_pair.agents_key.key_name
+
+  metadata_options {
+    http_tokens = "required"
+  }
+
+  root_block_device {
+    volume_size           = 8
+    volume_type           = "gp3"
+    encrypted             = true
+    kms_key_id            = aws_kms_key.ebs.arn
+    delete_on_termination = true
+  }
+
+  user_data = templatefile("${path.module}/templates/userdata-jump-box.tpl", {
+    log_group_name = aws_cloudwatch_log_group.jump_box_logs.name
+  })
+  user_data_replace_on_change = true
+
+  tags = {
+    Name = "${var.project_name}-jump-box"
+  }
+}
+
+resource "aws_eip" "jump_box" {
+  for_each = aws_instance.jump_box
+  domain   = "vpc"
+  instance = each.value.id
+
+  depends_on = [aws_internet_gateway.agents_igw]
+
+  tags = {
+    Name = "${var.project_name}-jump-box-eip"
+  }
+}
+
+// ECS NAT Instance
+
+resource "aws_instance" "nat_instance" {
+  for_each = {
+    "az1" = aws_subnet.agents_public_subnet_1.id
+    "az2" = aws_subnet.agents_public_subnet_2.id
+  }
+
+  ami                         = data.aws_ami.amazon_linux_2023.id
+  instance_type               = var.instance_types.nat_instance
+  associate_public_ip_address = true
+  subnet_id                   = each.value
+  vpc_security_group_ids      = [aws_security_group.nat_instance.id]
+  iam_instance_profile        = aws_iam_instance_profile.nat_instance.name
+  key_name                    = aws_key_pair.agents_key.key_name
+
+  source_dest_check = false
+
+  metadata_options {
+    http_tokens = "required"
+  }
+
+  root_block_device {
+    volume_size           = 8
+    volume_type           = "gp3"
+    encrypted             = true
+    kms_key_id            = aws_kms_key.ebs.arn
+    delete_on_termination = true
+  }
+
+  user_data = templatefile("${path.module}/templates/userdata.tpl", {
+    private_subnet_1_cidr = aws_subnet.agents_private_subnet_1.cidr_block,
+    private_subnet_2_cidr = aws_subnet.agents_private_subnet_2.cidr_block,
+    log_group_name        = aws_cloudwatch_log_group.nat_instance_logs.name
+  })
+  user_data_replace_on_change = true
+
+  tags = {
+    Name = "${var.project_name}-nat-instance"
+  }
+}
+
+
+resource "aws_eip" "nat_instance" {
+  for_each = aws_instance.nat_instance
+  domain   = "vpc"
+  instance = each.value.id
+
+  depends_on = [aws_internet_gateway.agents_igw.id]
+
+  tags = {
+    Name = "${var.project_name}-nat-instance-eip"
+  }
+}
+
+// SSH Config
+
+resource "local_file" "ssh_config" {
+  content         = <<-EOF
+    # Usage: ssh -F .ssh/config jump-box
+
+    %{for name, inst in aws_instance.jump_box~}
+    Host jump-box-${name}
+      HostName ${aws_eip.jump_box[name].public_ip}
+      User ec2-user
+      IdentityFile ${abspath("${path.module}/.ssh/${var.project_name}-key.pem")}
+      StrictHostKeyChecking accept-new
+      UserKnownHostsFile ${path.module}/.ssh/known_hosts
+
+    Host nat-instance-${name}
+      HostName ${aws_eip.nat_instance[name].public_ip}
+      User ec2-user
+      IdentityFile ${abspath("${path.module}/.ssh/${var.project_name}-key.pem")}
+      StrictHostKeyChecking accept-new
+      UserKnownHostsFile ${path.module}/.ssh/known_hosts
+    %{endfor~}
+
+    EOF
+  filename        = "${path.module}/.ssh/config"
+  file_permission = "0600"
+}
