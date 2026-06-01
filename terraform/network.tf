@@ -74,13 +74,21 @@ resource "aws_internet_gateway" "agents_igw" {
   }
 }
 
-// Private Route Table
+// Private Route Tables
 
-resource "aws_route_table" "agents_private_rt" {
+resource "aws_route_table" "agents_private_rt_1" {
   vpc_id = aws_vpc.agents_vpc.id
 
   tags = {
-    Name = "${var.project_name}-private-rt"
+    Name = "${var.project_name}-private-rt-1"
+  }
+}
+
+resource "aws_route_table" "agents_private_rt_2" {
+  vpc_id = aws_vpc.agents_vpc.id
+
+  tags = {
+    Name = "${var.project_name}-private-rt-2"
   }
 }
 
@@ -98,12 +106,12 @@ resource "aws_route_table" "agents_public_rt" {
 
 resource "aws_route_table_association" "agents_private_assoc_1" {
   subnet_id      = aws_subnet.agents_private_subnet_1.id
-  route_table_id = aws_route_table.agents_private_rt.id
+  route_table_id = aws_route_table.agents_private_rt_1.id
 }
 
 resource "aws_route_table_association" "agents_private_assoc_2" {
   subnet_id      = aws_subnet.agents_private_subnet_2.id
-  route_table_id = aws_route_table.agents_private_rt.id
+  route_table_id = aws_route_table.agents_private_rt_2.id
 }
 
 resource "aws_route_table_association" "agents_public_assoc_1" {
@@ -124,10 +132,16 @@ resource "aws_route" "route_to_igw" {
   gateway_id             = aws_internet_gateway.agents_igw.id
 }
 
-resource "aws_route" "private_to_nat" {
-  route_table_id         = aws_route_table.agents_private_rt.id
+resource "aws_route" "private_to_nat_1" {
+  route_table_id         = aws_route_table.agents_private_rt_1.id
   destination_cidr_block = "0.0.0.0/0"
-  network_interface_id   = aws_instance.nat_instance.primary_network_interface_id
+  network_interface_id   = aws_instance.nat_instance["az1"].primary_network_interface_id
+}
+
+resource "aws_route" "private_to_nat_2" {
+  route_table_id         = aws_route_table.agents_private_rt_2.id
+  destination_cidr_block = "0.0.0.0/0"
+  network_interface_id   = aws_instance.nat_instance["az2"].primary_network_interface_id
 }
 
 // These endpoints cover the 'hidden' dependencies required for Fargate
