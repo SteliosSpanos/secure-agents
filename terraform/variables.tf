@@ -90,7 +90,7 @@ variable "allowed_origins" {
 
 variable "public_key_path" {
   type        = string
-  default     = ".shh/agents-key.pem.pub"
+  default     = ".ssh/agents-key.pem.pub"
   description = "Path to the public key file"
 }
 
