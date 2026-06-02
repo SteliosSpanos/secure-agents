@@ -21,13 +21,13 @@ aws_config = Config(
 
 dynamodb = boto3.resource("dynamodb", config=aws_config)
 
-api_keys_table_name = os.environ.get("API_KEYS_TABLE")
-jobs_table_name = os.environ.get("JOBS_TABLE")
-if not api_keys_table_name or not jobs_table_name:
+API_KEYS_TABLE_NAME = os.environ.get("API_KEYS_TABLE")
+JOBS_TABLE_NAME = os.environ.get("JOBS_TABLE")
+if not API_KEYS_TABLE_NAME or not JOBS_TABLE_NAME:
     raise RuntimeError("Critical environment variables are missing.")
 
-api_keys_table = dynamodb.Table(api_keys_table_name)
-jobs_table = dynamodb.Table(jobs_table_name)
+api_keys_table = dynamodb.Table(API_KEYS_TABLE_NAME)
+jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
 
 
 # Whethe Lambda finishes or crashes AWS deletes and changes the visibilty of messages automaticallyn

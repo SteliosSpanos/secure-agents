@@ -15,8 +15,8 @@ aws_config = Config(
 )
 
 sqs = boto3.client("sqs", config=aws_config)
-webhook_queue_url = os.environ.get("WEBHOOK_QUEUE_URL")
-if not webhook_queue_url:
+WEBHOOK_QUEUE_URL = os.environ.get("WEBHOOK_QUEUE_URL")
+if not WEBHOOK_QUEUE_URL:
     raise RuntimeError("Critical environment variables are missing.")
 
 
@@ -63,7 +63,7 @@ def lambda_handler(event, context):
                 }
 
                 sqs.send_message(
-                    QueueUrl=webhook_queue_url,
+                    QueueUrl=WEBHOOK_QUEUE_URL,
                     MessageBody=json.dumps(message_body),
                     MessageAttributes={
                         "MessageType": {

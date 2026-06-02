@@ -27,12 +27,12 @@ aws_config = Config(
 # Handling Database and TCP connections outside of the handler for reduced latency of cold starts
 dynamodb = boto3.resource("dynamodb", config=aws_config)
 
-table_name = os.environ.get("API_KEYS_TABLE")  # From terraform
-expected_origin_secret = os.environ.get("ORIGIN_SECRET")
-if not table_name or not expected_origin_secret:
+TABLE_NAME = os.environ.get("API_KEYS_TABLE")  # From terraform
+EXPECTED_ORIGIN_SECRET = os.environ.get("ORIGIN_SECRET")
+if not TABLE_NAME or not EXPECTED_ORIGIN_SECRET:
     raise RuntimeError("Critical environment variables are missing.")
 
-api_keys_table = dynamodb.Table(table_name)
+api_keys_table = dynamodb.Table(TABLE_NAME)
 
 
 def lambda_handler(event, context):
@@ -40,7 +40,7 @@ def lambda_handler(event, context):
     headers = event.get("headers", {})
     origin_header = headers.get("x-origin-verify")
 
-    if origin_header != expected_origin_secret:
+    if origin_header != EXPECTED_ORIGIN_SECRET:
         logger.critical(
             "SECURITY ALERT: Request bypassed CloudFront/WAF. Missing or invalid X-Origin-Verify header."
         )
