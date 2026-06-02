@@ -220,7 +220,7 @@ resource "aws_instance" "jump_box" {
   user_data_replace_on_change = true
 
   tags = {
-    Name = "${var.project_name}-jump-box"
+    Name = "${var.project_name}-jump-box-${each.key}"
   }
 }
 
@@ -232,7 +232,7 @@ resource "aws_eip" "jump_box" {
   depends_on = [aws_internet_gateway.agents_igw]
 
   tags = {
-    Name = "${var.project_name}-jump-box-eip"
+    Name = "${var.project_name}-jump-box-eip-${each.key}"
   }
 }
 
@@ -274,7 +274,7 @@ resource "aws_instance" "nat_instance" {
   user_data_replace_on_change = true
 
   tags = {
-    Name = "${var.project_name}-nat-instance"
+    Name = "${var.project_name}-nat-instance-${each.key}"
   }
 }
 
@@ -287,7 +287,7 @@ resource "aws_eip" "nat_instance" {
   depends_on = [aws_internet_gateway.agents_igw.id]
 
   tags = {
-    Name = "${var.project_name}-nat-instance-eip"
+    Name = "${var.project_name}-nat-instance-eip-${each.key}"
   }
 }
 
