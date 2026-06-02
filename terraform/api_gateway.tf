@@ -98,7 +98,7 @@ resource "aws_lambda_function" "authorizer" {
   function_name    = "${var.project_name}-authorizer"
   role             = aws_iam_role.authorizer_role.arn
   handler          = "authorizer.lambda_handler"
-  runtime          = "python3.11"
+  runtime          = "python3.13"
   timeout          = 15
   memory_size      = 256
 
