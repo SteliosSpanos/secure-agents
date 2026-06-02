@@ -1,13 +1,15 @@
 /*
-    Log Groups and SQS Alarms:
+    Log Groups, SQS Alarms and Operational Monitoring:
     - VPC Flow Logs
     - API Logs
     - Worker Logs
     - Lambda Logs
     - WAF Logs
-    - API Gateway Logs
-    - SNS Alerts: GuardDuty Findings, DLQ Alerts, Worker Capacity Alerts
-    - SQS Alerts
+    - APIGW Logs
+    - Jump Box & NAT Logs
+    - SNS Alerts: Guarduty Findings, DLQ Alerts, Capacity Alerts
+    - Operational Alarms: API Health, NAT Health, Queue Backlogs
+    - Centralized Dashboard
 */
 
 // VPC Flow Logs
@@ -146,6 +148,8 @@ resource "aws_cloudwatch_log_group" "nat_instance_logs" {
 
 
 
+
+
 // SNS Alerts
 
 resource "aws_sns_topic" "alerts" {
@@ -171,7 +175,9 @@ resource "aws_sns_topic_policy" "alerts_policy" {
 
 
 
-// SQS Alerts
+
+
+// Agent DLQ Alarm
 
 resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
   alarm_name          = "${var.project_name}-dlq-alarm"
@@ -191,6 +197,28 @@ resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
   alarm_actions = [aws_sns_topic.alerts.arn]
 }
 
+// Webhook DLQ Alarm
+
+resource "aws_cloudwatch_metric_alarm" "webhook_dlq_not_empty" {
+  alarm_name          = "${var.project_name}-webhook-dlq-alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 1
+  alarm_description   = "Fires when webhook delivery fails permanently"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.webhook_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// Worker Max Capacity Alarm
+
 resource "aws_cloudwatch_metric_alarm" "worker_at_max_capacity" {
   alarm_name          = "${var.project_name}-worker-at-max-capacity"
   comparison_operator = "GreaterThanOrEqualToThreshold"
@@ -206,6 +234,107 @@ resource "aws_cloudwatch_metric_alarm" "worker_at_max_capacity" {
   dimensions = {
     ClusterName = aws_ecs_cluster.agents_cluster.name
     ServiceName = aws_ecs_service.worker_service.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// SQS Stalling (Oldest Message)
+
+resource "aws_cloudwatch_metric_alarm" "sqs_stalling" {
+  alarm_name          = "${var.project_name}-sqs-stalling"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateAgeOfOldestMessage"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 1200
+  alarm_description   = "A message has been waiting for > 20 mins. Check worker health"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.agent_queue.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// ALB High 5XX Error Rate
+
+resource "aws_cloudwatch_metric_alarm" "alb_high_5xx" {
+  alarm_name          = "${var.project_name}-alb-high-5xx"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "HTTPCode_Target_5XX_Count"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 5
+  alarm_description   = "High 5XX error rate from FastAPI containers"
+
+  dimensions = {
+    LoadBalancer = aws_lb.api_lb.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// ALB High Latency
+
+resource "aws_cloudwatch_metric_alarm" "alb_latency" {
+  alarm_name          = "${var.project_name}-alb-latency"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 2
+  metric_name         = "TargetResponseTime"
+  namespace           = "AWS/ApplicationELB"
+  period              = 60
+  statistic           = "Average"
+  threshold           = 1.0
+  alarm_description   = "API response time is over 1 second"
+
+  dimensions = {
+    LoadBalancer = aws_lb.api_lb.arn_suffix
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// NAT Instance Health Checks
+
+resource "aws_cloudwatch_metric_alarm" "nat_status_check" {
+  for_each            = aws_instance.nat_instance
+  alarm_name          = "${var.project_name}-nat-down-${each.key}"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "StatusCheckFailed"
+  namespace           = "AWS/EC2"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 0
+  alarm_description   = "NAT Instance in ${each.key} failed status check"
+
+  dimensions = {
+    InstanceId = each.value.id
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// Webhook Lambda Failures
+
+resource "aws_cloudwatch_metric_alarm" "webhook_lambda_failures" {
+  alarm_name          = "${var.project_name}-webhook-failures"
+  comparison_operator = "GreaterThanThreshold"
+  evaluation_periods  = 1
+  metric_name         = "Errors"
+  namespace           = "AWS/Lambda"
+  period              = 60
+  statistic           = "Sum"
+  threshold           = 0
+  alarm_description   = "Webhook Lambda failed. Possible NAT Instane or external API issue"
+
+  dimensions = {
+    FunctionName = "${var.project_name}-webhook-consumer"
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
@@ -231,3 +360,52 @@ resource "aws_cloudwatch_event_target" "sns" {
   target_id = "SendToSNS"
   arn       = aws_sns_topic.alerts.arn
 }
+
+
+
+
+
+
+
+// Operational Dashboard
+
+resource "aws_cloudwatch_dashboard" "main" {
+  dashboard_name = "${var.project_name}-overview"
+
+  dashboard_body = jsonencode({
+    widgets = [
+      {
+        type   = "metric"
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/ApplicationELB", "RequestCount", "LoadBalancer", aws_lb.api_lb.arn_suffix, { "id" : "m1", "label" : "API Requests" }],
+            [".", "HTTPCode_Target_5XX_Count", ".", ".", { "id" : "m2", "label" : "5XX Errors", "color" : "#d62728" }]
+          ]
+          period = 300
+          stat   = "Sum"
+          region = var.region
+          title  = "API Traffic & Health"
+        }
+      },
+      {
+        type   = "metric"
+        width  = 12
+        height = 6
+        properties = {
+          metrics = [
+            ["AWS/SQS", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.agent_queue.name, { "label" : "Tasks Waiting" }],
+            [".", "ApproximateNumberOfMessagesNotVisible", ".", ".", { "label" : "Tasks in progress" }],
+            [".", "ApproximateNumberOfMessagesVisible", "QueueName", aws_sqs_queue.webhook_queue.name, { "label" : "Webhooks waiting" }]
+          ]
+          period = 60
+          stat   = "Maximum"
+          region = var.region
+          title  = "Queue Backlogs"
+        }
+      }
+    ]
+  })
+}
+
