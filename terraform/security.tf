@@ -72,12 +72,12 @@ resource "aws_security_group" "fargate_api_sg" {
   }
 
   egress { // AWS SDK communicates over HTTPS
-    description = "Allow HTTPS out to VPC endpoints"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block] // Covers Interface Endpoints
-    prefix_list_ids = [                           // Covers Gateway Endpoints
+    description     = "Allow HTTPS out to VPC endpoints"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vpc_endpoints_sg.id] // Covers Interface Endpoints
+    prefix_list_ids = [                                        // Covers Gateway Endpoints
       data.aws_prefix_list.s3.id,
       data.aws_prefix_list.dynamodb.id
     ]
@@ -92,11 +92,11 @@ resource "aws_security_group" "fargate_worker_sg" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   egress {
-    description = "Allow HTTPS out to VPC Endpoints"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+    description     = "Allow HTTPS out to VPC Endpoints"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vpc_endpoints_sg.id]
     prefix_list_ids = [
       data.aws_prefix_list.s3.id,
       data.aws_prefix_list.dynamodb.id
@@ -121,7 +121,9 @@ resource "aws_security_group" "vpc_endpoints_sg" {
       aws_security_group.fargate_worker_sg.id,
       aws_security_group.authorizer_sg.id,
       aws_security_group.webhook_trigger_sg.id,
-      aws_security_group.webhook_consumer_sg.id
+      aws_security_group.webhook_consumer_sg.id,
+      aws_security_group.nat_instance.id,
+      aws_security_group.jump_box.id
     ]
   }
 
@@ -146,11 +148,11 @@ resource "aws_security_group" "authorizer_sg" {
   }
 
   egress {
-    description = "Allow HTTPS egress to Interface Endpoints (KMS, Logs)"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+    description     = "Allow HTTPS egress to Interface Endpoints (KMS, Logs)"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vpc_endpoints_sg.id]
   }
 
   tags = {
@@ -175,11 +177,11 @@ resource "aws_security_group" "webhook_trigger_sg" {
   }
 
   egress {
-    description = "Allow HTTPS egress to Interface Endpoints (KMS, SQS, Logs)"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+    description     = "Allow HTTPS egress to Interface Endpoints (KMS, SQS, Logs)"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vpc_endpoints_sg.id]
   }
 
   tags = {
@@ -203,11 +205,11 @@ resource "aws_security_group" "webhook_consumer_sg" {
   }
 
   egress {
-    description = "Allow HTTPS egress to Interface Endpoints (KMS, SQS, Logs)"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [aws_vpc.agents_vpc.cidr_block]
+    description     = "Allow HTTPS egress to Interface Endpoints (KMS, SQS, Logs)"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.vpc_endpoints_sg.id]
   }
 
   egress {
@@ -267,14 +269,11 @@ resource "aws_security_group" "nat_instance" {
   vpc_id      = aws_vpc.agents_vpc.id
 
   ingress {
-    description = "HTTPS from private subnets"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    cidr_blocks = [
-      aws_subnet.agents_private_subnet_1.cidr_block,
-      aws_subnet.agents_private_subnet_2.cidr_block
-    ]
+    description     = "HTTPS from Webhook Consumer Lambda"
+    from_port       = 443
+    to_port         = 443
+    protocol        = "tcp"
+    security_groups = [aws_security_group.webhook_consumer_sg.id]
   }
 
   ingress {
@@ -294,10 +293,34 @@ resource "aws_security_group" "nat_instance" {
   }
 
   egress {
-    description = "All outbound traffic"
-    from_port   = 0
-    to_port     = 0
-    protocol    = "-1"
+    description = "Allow HTTPS to internet for webhooks and updates"
+    from_port   = 443
+    to_port     = 443
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow HTTP to internet for package updates"
+    from_port   = 80
+    to_port     = 80
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow DNS (TCP) to internet"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "tcp"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  egress {
+    description = "Allow DNS (UDP) to internet"
+    from_port   = 53
+    to_port     = 53
+    protocol    = "udp"
     cidr_blocks = ["0.0.0.0/0"]
   }
 
