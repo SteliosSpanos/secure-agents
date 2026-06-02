@@ -401,7 +401,8 @@ data "aws_iam_policy_document" "jobs_table_kms_policy" {
         aws_iam_role.api_task_role.arn,
         aws_iam_role.agent_task_role.arn,
         aws_iam_role.webhook_trigger_role.arn,
-        aws_iam_role.webhook_consumer_role.arn
+        aws_iam_role.webhook_consumer_role.arn,
+        aws_iam_role.ecs_execution_role.arn
       ]
     }
     actions = [
