@@ -749,7 +749,8 @@ data "aws_iam_policy_document" "agent_iam_policy" {
     effect = "Allow"
     actions = [
       "kms:Decrypt",
-      "kms:GenerateDataKey*"
+      "kms:GenerateDataKey*",
+      "kms:DescribeKey"
     ]
     resources = [
       aws_kms_key.jobs_table.arn,
@@ -989,9 +990,13 @@ data "aws_iam_policy_document" "instance_iam_policy" {
     effect = "Allow"
     actions = [
       "logs:CreateLogStream",
-      "logs:PutLogEvents"
+      "logs:PutLogEvents",
+      "logs:DescribeLogStreams"
     ]
-    resources = ["${aws_cloudwatch_log_group.nat_instance_logs.arn}:*"]
+    resources = [
+      "${aws_cloudwatch_log_group.nat_instance_logs.arn}:*",
+      "${aws_cloudwatch_log_group.jump_box_logs.arn}:*"
+    ]
   }
 }
 
