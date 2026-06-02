@@ -333,7 +333,7 @@ def main():
                             final_summary = summary
                             if is_truncated:
                                 final_summary = (
-                                    f"[Note: document was truncated to {settings.char_limit} characters]"
+                                    f"[Note: document was truncated to {settings.CHAR_LIMIT} characters]"
                                     + summary
                                 )
 
