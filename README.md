@@ -101,7 +101,7 @@ graph TD
       MainQueue[("SQS: Work Queue")]
       WebhookQueue[("SQS: Webhook Queue")]
       BedrockInference["Bedrock Runtime<br>(Claude 3 Haiku)"]
-
+      
       subgraph Alerting["Monitoring & Alerts"]
         SNS["SNS: Security Alerts"]
         EventBridge["EventBridge: GuardDuty Findings"]
@@ -112,7 +112,7 @@ graph TD
     subgraph VPC["VPC (No IGW for Compute)"]
       VpcLinkENI["VPC Link ENI"]
       InternalALB[("Internal ALB")]
-
+      
       subgraph PublicSubnets["Public Management Layer"]
         NAT["NAT Instances<br>(Cost-Saving Egress)"]
         JumpBox["SSH Jump Boxes"]
@@ -137,7 +137,7 @@ graph TD
         WebhookConsumer["Lambda: Webhook Consumer"]
       end
       class PrivateSubnets blue;
-
+      
       FlowLogs[("VPC Flow Logs")]
     end
     class VPC purple;
@@ -148,6 +148,7 @@ graph TD
       ALBAccessLogs[("ALB Access Logs")]
       WAFLogs[("WAF Logs (CloudWatch)")]
       APIGWLogs[("APIGW Logs (CloudWatch)")]
+      CWAppLogs[("CloudWatch App Logs")]
     end
     class AuditLogs grey;
   end
@@ -164,35 +165,44 @@ graph TD
   Authorizer -- "6. Verify Key" --> EndpointDynamoDB
   EndpointDynamoDB -.-> ApiKeysTable
   Authorizer -- "7. Allow + context" --> APIGW
+  Authorizer -- "8. Ship Logs" --> EndpointLogs
 
-  APIGW -- "8. VPC Link" --> VpcLinkENI
+  APIGW -- "9. VPC Link" --> VpcLinkENI
   VpcLinkENI --> InternalALB
   InternalALB --> ApiService
-  ApiService -- "9. Presigned URL" --> Client
-  ApiService -- "10. Log Job" --> EndpointDynamoDB
+  ApiService -- "10. Presigned URL" --> Client
+  ApiService -- "11. Log Job" --> EndpointDynamoDB
   EndpointDynamoDB -.-> JobsTable
-  ApiService -- "11. Resolve Keys" --> EndpointKMS
+  ApiService -- "12. Resolve Keys" --> EndpointKMS
   EndpointKMS -.-> KmsShared
+  ApiService -- "13. Ship Logs" --> EndpointLogs
 
-  Client -- "12. Upload + Meta Headers" --> S3
-  S3 -- "13. Event" --> MainQueue
-
-  WorkerService -- "14. Pull Task" --> EndpointSQS
+  Client -- "14. Upload + Meta Headers" --> S3
+  S3 -- "15. Event" --> MainQueue
+  
+  WorkerService -- "16. Pull Task" --> EndpointSQS
   EndpointSQS -.-> MainQueue
-  WorkerService -- "15. Stream File" --> EndpointS3
+  WorkerService -- "17. Stream File" --> EndpointS3
   EndpointS3 -.-> S3
-  WorkerService -- "16. Inference" --> EndpointBedrock
+  WorkerService -- "18. Inference" --> EndpointBedrock
   EndpointBedrock -.-> BedrockInference
-  WorkerService -- "17. Update Status" --> EndpointDynamoDB
+  WorkerService -- "19. Update Status" --> EndpointDynamoDB
   EndpointDynamoDB -.-> JobsTable
-  WorkerService -- "18. Decrypt" --> EndpointKMS
+  WorkerService -- "20. Decrypt" --> EndpointKMS
   EndpointKMS -.-> KmsJobs
+  WorkerService -- "21. Ship Logs" --> EndpointLogs
 
-  JobsTable -- "19. Stream (Completed)" --> WebhookTrigger
-  WebhookTrigger -- "20. Queue Notification" --> EndpointSQS
+  JobsTable -- "22. Stream (Completed)" --> WebhookTrigger
+  WebhookTrigger -- "23. Queue Notification" --> EndpointSQS
   EndpointSQS -.-> WebhookQueue
-  WebhookQueue -- "21. Process" --> WebhookConsumer
-  WebhookConsumer -- "22. Signed POST" --> WebhookReceiver
+  WebhookTrigger -- "24. Ship Logs" --> EndpointLogs
+
+  WebhookConsumer -- "25. Process" --> EndpointSQS
+  EndpointSQS -.-> WebhookQueue
+  WebhookConsumer -- "26. Fetch Key/Job" --> EndpointDynamoDB
+  EndpointDynamoDB -.-> ApiKeysTable
+  WebhookConsumer -- "27. Signed POST" --> WebhookReceiver
+  WebhookConsumer -- "28. Ship Logs" --> EndpointLogs
 
   S3 -.-> S3AccessLogs
   CloudFront -.-> CloudFrontLogs
@@ -200,9 +210,11 @@ graph TD
   WAF -.-> WAFLogs
   APIGW -.-> APIGWLogs
   VPC -.-> FlowLogs
-
+  EndpointLogs -.-> CWAppLogs
+  
   PrivateSubnets -- "Outbound (Yum/Pip)" --> NAT
-  ECR -.-> EndpointECR
+  PrivateSubnets -- "Pull Image" --> EndpointECR
+  EndpointECR -.-> ECR
   NAT -- "Volume Crypt" --> KmsEbs
   JumpBox -- "Volume Crypt" --> KmsEbs
   WAFLogs -- "Encrypted Store" --> KmsWaf
@@ -215,38 +227,30 @@ graph TD
 SecureAgents utilizes a four-phase asynchronous pipeline designed for zero-trust isolation and high-volume processing.
 
 ### Phase 1: The Negotiation (Handshake)
-
 The client does not send documents to the API. Instead, they request a "secure ticket" to upload directly to S3.
-
 1. **Request:** Client sends `POST /api/v1/request-upload` with their `x-api-key`.
 2. **Double-Shield Validation:** WAF and API Gateway perform native header checks (`x-api-key` + `x-origin-verify`) before any compute is invoked.
 3. **Authorization:** A Lambda Authorizer verifies the key hash in DynamoDB and returns a secure `client_id` context.
 4. **Presigned Ticket:** The FastAPI backend initializes a job record and returns an **S3 Presigned POST URL** containing a set of `required_fields` (security tokens and metadata).
 
 ### Phase 2: Ingestion (Direct Secure Upload)
-
 The client uploads the PDF directly to S3, bypassing the API to ensure performance and security.
-
 - **Mechanism:** Client performs a multipart `POST` to the provided S3 URL.
 - **Mandatory Metadata:** The client **must** include all `required_fields` from Phase 1. These include:
-  - `x-amz-server-side-encryption`: Forces AES-256 encryption via KMS.
-  - `x-amz-meta-client-id`: Cryptographically ties the object to the owner.
-  - `x-amz-meta-job-id`: Links the file to the specific processing job.
+    - `x-amz-server-side-encryption`: Forces AES-256 encryption via KMS.
+    - `x-amz-meta-client-id`: Cryptographically ties the object to the owner.
+    - `x-amz-meta-job-id`: Links the file to the specific processing job.
 - **Validation:** S3 verifies the backend-generated signature. If any metadata or the file size (50MB) is tampered with, the upload is rejected with a `403 Forbidden`.
 
 ### Phase 3: Transformation (AI Pipeline)
-
 The system processes the document in a fully isolated, zero-egress environment.
-
 1. **Trigger:** S3 triggers an event notification to an SQS Work Queue.
 2. **Orchestration:** An AI Worker (Fargate) pulls the task and marks the job as `PROCESSING`.
 3. **Privacy-First Inference:** The worker extracts text and invokes **Claude 3 Haiku** via a VPC Endpoint. Data travels over the AWS private backbone—never the public internet.
 4. **Finalization:** The summary is saved to DynamoDB, and the status moves to `COMPLETED`.
 
 ### Phase 4: Notification (Asynchronous Webhook)
-
 The client is notified instantly without the need for constant API polling.
-
 1. **Event Trigger:** A DynamoDB Stream detects the `COMPLETED` status.
 2. **Signed Delivery:** A Consumer Lambda fetches the client's `webhook_secret`, signs the payload with **HMAC-SHA256**, and sends a `POST` request to the client's endpoint.
 3. **Headers:** The client receives `X-SecureAgents-Signature` to verify the payload's integrity.
@@ -254,7 +258,6 @@ The client is notified instantly without the need for constant API polling.
 ---
 
 ## Low-Code & No-Code Integration
-
 SecureAgents is designed to be "Integration-Ready" for tools like **Make.com**, **Zapier**, and **n8n**.
 
 - **Simplified Ingestion:** Low-code users can map the `required_fields` from the API response directly into an HTTP module to handle direct S3 uploads without writing code.
@@ -284,27 +287,21 @@ SecureAgents is designed to be "Integration-Ready" for tools like **Make.com**, 
 SecureAgents includes a comprehensive monitoring suite to ensure security and operational stability:
 
 ### 1. Centralized Logging
-
 All system logs are encrypted with Customer Managed Keys (CMKs) and retained for 30 days:
-
 - **API & Worker Logs:** Full application traces from ECS Fargate.
 - **VPC Flow Logs:** Captures all IP traffic within the VPC for security auditing.
 - **Audit Trails:** Specialized logs for **WAF (Edge)**, **API Gateway (Entry)**, and **S3 (Storage Access)**.
 - **Infrastructure Logs:** Boot logs for **NAT Instances** and **Jump Boxes**.
 
 ### 2. Proactive Alerting (SNS)
-
 High-priority alerts are sent via SNS to the developer team:
-
 - **Security Alerts:** Triggered by **GuardDuty Findings** (Severity >= 7).
 - **Processing Failures:** Fires if the **Agent DLQ** or **Webhook DLQ** receives a failed message.
 - **Infrastructure Health:** Alerts for **NAT Instance status check failures** or **High ALB 5XX error rates**.
 - **Performance Bottlenecks:** Alerts for **High ALB Latency (>1s)** or **SQS Stalling** (messages older than 20 mins).
 
 ### 3. Operational Dashboard
-
 A centralized CloudWatch Dashboard provides real-time visibility into:
-
 - **Traffic Health:** Request counts vs. 5XX error rates.
 - **Queue Performance:** Tasks waiting, tasks in progress, and webhook backlog status.
 
@@ -366,7 +363,6 @@ python scripts/client_script.py --deactivate --key "ak_live_..."
 ### 2. Monitoring Webhook Failures
 
 If webhooks fail to deliver, they move to the `agents-webhook-dlq`.
-
 - **Check DLQ:** `aws sqs receive-message --queue-url <WEBHOOK_DLQ_URL>`
 - **Check Logs:** `aws logs tail /aws/lambda/agents-webhook-consumer --follow`
 
@@ -375,24 +371,18 @@ If webhooks fail to deliver, they move to the `agents-webhook-dlq`.
 ## API Reference
 
 ### 1. Request Upload Slot
-
 `POST /api/v1/request-upload`
-
 - **Headers:** `x-api-key: <key>`
 - **Body:** `{"filename": "document.pdf"}`
 
 ### 2. Uploading the File
-
 You **must** include the metadata headers returned in the `required_fields`:
-
 - `x-amz-meta-client-id`
 - `x-amz-meta-job-id`
 - `x-amz-server-side-encryption: aws:kms`
 
 ### 3. Receiving Webhooks
-
 Your endpoint will receive a POST request with:
-
 - **Header:** `X-SecureAgents-Signature: <hmac-sha256-hash>`
 - **Body:**
   ```json
@@ -416,5 +406,4 @@ Your endpoint will receive a POST request with:
 ---
 
 ## License
-
 MIT License. See [LICENSE](LICENSE) for details.
