@@ -13,7 +13,9 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 ├── agent-worker/           # Python 3.11 worker (PDF Processing & Bedrock AI)
 ├── bootstrap/              # Terraform for remote state (S3/DynamoDB)
 ├── lambda-authorizer/      # Zero-Trust HMAC & Origin validation logic
-├── scripts/                # Management scripts (API Key rotation)
+├── lambda-webhook-trigger/ # DynamoDB Stream consumer (Triggers notifications)
+├── lambda-webhook-consumer/# Secure Webhook delivery (HMAC Signatures)
+├── scripts/                # Management scripts (API Key & Webhook setup)
 └── terraform/              # Main infrastructure (VPC, ECS, WAF, etc.)
 ```
 
@@ -25,35 +27,34 @@ SecureAgents is built on a "Deny-by-Default" principle. Below are the key pillar
 
 ### 1. Zero-Egress VPC Design
 
-- **No Internet Gateway:** The VPC contains no Internet Gateway (IGW). All compute resources (ECS Fargate) live in strictly private subnets.
-- **VPC Endpoints (PrivateLink):** Communication with AWS services (S3, DynamoDB, SQS, KMS, Bedrock) occurs entirely over the AWS private network backbone. Data never traverses the public internet.
-- **Security Group Hardening:** Egress is restricted to only the necessary VPC Endpoints via Prefix Lists, preventing data exfiltration even if a container is compromised.
+- **Private Subnets & NAT Instances:** All compute resources (ECS Fargate) live in strictly private subnets. Egress for maintenance and updates is routed through cost-optimized **NAT Instances** rather than expensive NAT Gateways.
+- **VPC Endpoints (PrivateLink):** Critical communication with AWS services (S3, DynamoDB, SQS, KMS, Bedrock) occurs entirely over the AWS private network backbone via Interface and Gateway Endpoints.
+- **Security Group Hardening:** Egress is restricted to only the necessary VPC Endpoints and NAT routes, preventing data exfiltration even if a container is compromised.
 - **Resource-Based Policies:** S3 and DynamoDB tables have policies that explicitly `Deny` any traffic that does not originate from the specific VPC Endpoints.
 
 ### 2. The "Double-Shield" Ingress & Audit Trail
 
 - **Edge Protection:** Traffic first hits AWS WAF (Rate Limiting + Managed Rule Sets) and CloudFront.
-- **Comprehensive Logging:** The system maintains a full audit trail including **WAF Logs** (blocked/allowed requests), **CloudFront Logs** (edge traffic), **ALB Access Logs** (internal traffic), and **S3 Server Access Logs** (every object interaction).
-- **Enhanced Audit Trail:** CloudFront is configured to forward the `X-Forwarded-For` header, and API Gateway access logs are enriched to capture the real client IP for security forensic analysis.
 - **Native Header Validation:** API Gateway performs native `identity_source` checks for both the API Key and the `X-Origin-Verify` secret, rejecting unauthorized direct traffic before it even invokes the Lambda Authorizer.
-- **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link. This means the ALB has no public DNS or IP address.
+- **Secure Authorizer:** The Lambda Authorizer validates HMAC-based API keys against hashed records in DynamoDB, ensuring zero-knowledge storage of sensitive keys.
+- **VPC Link:** API Gateway connects to an **Internal-Only Application Load Balancer** via a VPC Link, ensuring the ALB has no public DNS or IP address.
 
 ### 3. Application Resilience & S3 Hardening
 
-- **S3 Bucket Hardening:** All buckets use **BucketOwnerEnforced** ownership controls, effectively disabling ACLs and ensuring all objects are owned by the account.
-- **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM. This prevents Out-Of-Memory (OOM) attacks.
-- **Size & Content Limits:** The system enforces a strict maximum file size (default 10MB) and truncates extracted text to prevent LLM context window overflows and "token-bomb" cost attacks.
-- **Graceful Shutdown (SIGTERM):** Workers are programmed to rescue active jobs during Fargate scale-in events. If a worker receives a SIGTERM, it attempts to revert the job state to `PENDING_UPLOAD` and release the SQS message before exiting.
-- **KMS Managed Keys:** Every service (S3, DynamoDB, SQS, ECR, CloudWatch) uses Customer Managed Keys (CMKs) for AES-256 encryption.
+- **S3 Bucket Hardening:** All buckets use **BucketOwnerEnforced** ownership controls, disabling ACLs and ensuring all objects are owned by the account.
+- **Streaming PDF Processing:** The AI worker utilizes a memory-efficient streaming strategy for PDF extraction, downloading documents to temporary local storage rather than RAM.
+- **Size & Content Limits:** The system enforces a strict maximum file size (**50MB**) and truncates extracted text (15,000 characters) to prevent LLM context window overflows and "token-bomb" cost attacks.
+- **Graceful Shutdown (SIGTERM):** Workers are programmed to rescue active jobs during Fargate scale-in events. If a worker receives a SIGTERM, it attempts to revert the job state to `PENDING_UPLOAD` and releases the SQS message before exiting.
 
-### 4. Proactive Threat Detection (GuardDuty)
+### 4. Asynchronous Webhook Delivery
 
-- **Runtime Monitoring:** Amazon GuardDuty is enabled with **ECS Fargate Runtime Monitoring**, allowing for the detection of suspicious process-level activity within containers (e.g., crypto-mining, shell-injection).
-- **S3 Data Protection:** GuardDuty monitors S3 data plane events (GetObject, ListObjects) to identify unusual access patterns or potential data exfiltration attempts.
+- **Event-Driven:** Once a job is `COMPLETED`, a DynamoDB Stream triggers a Lambda to queue a notification.
+- **Guaranteed Delivery:** SQS handles retries for webhook deliveries, moving failed notifications to a Dead Letter Queue (DLQ) after 3 attempts.
+- **Cryptographic Security:** Every webhook delivery includes an **HMAC-SHA256 signature** (`X-SecureAgents-Signature`), allowing clients to verify that the notification originated from SecureAgents.
 
 ---
 
-SecureAgents was built with a "Security First, Cloud Second" mindset. We use a defense-in-depth strategy that starts at the edge and goes deep into the VPC.
+## Architecture Diagram
 
 ```mermaid
 graph TD
@@ -67,6 +68,7 @@ graph TD
 
   subgraph PublicInternet["Public Internet"]
     Client["Client Application"]
+    WebhookReceiver["Client Webhook Endpoint"]
   end
   class PublicInternet orange;
 
@@ -81,6 +83,7 @@ graph TD
 
     subgraph RegionalServices["Regional Services (Encrypted + PITR)"]
       S3[("S3: Document Storage")]
+      ECR[("ECR: Container Images")]
 
       subgraph DynamoDB["DynamoDB (Regional)"]
         ApiKeysTable[("Table: API Keys")]
@@ -88,15 +91,17 @@ graph TD
       end
 
       subgraph KMS["KMS (Regional)"]
-        KmsAuth[("Key: Auth")]
-        KmsShared[("Key: Shared")]
+        KmsAuth[("Key: Auth (API Keys)")]
         KmsJobs[("Key: Jobs Table")]
+        KmsShared[("Key: Shared (S3/SQS/CW/ECR)")]
         KmsWaf[("Key: WAF Logs")]
+        KmsEbs[("Key: EBS Volumes")]
       end
 
       MainQueue[("SQS: Work Queue")]
-      BedrockInference["Bedrock Runtime<br>(Llama 3)"]
-      
+      WebhookQueue[("SQS: Webhook Queue")]
+      BedrockInference["Bedrock Runtime<br>(Claude 3 Haiku)"]
+
       subgraph Alerting["Monitoring & Alerts"]
         SNS["SNS: Security Alerts"]
         EventBridge["EventBridge: GuardDuty Findings"]
@@ -104,9 +109,14 @@ graph TD
     end
     class RegionalServices purple;
 
-    subgraph VPC["VPC (No Internet Access)"]
+    subgraph VPC["VPC (No IGW for Compute)"]
       VpcLinkENI["VPC Link ENI"]
       InternalALB[("Internal ALB")]
+
+      subgraph PublicSubnets["Public Management Layer"]
+        NAT["NAT Instances<br>(Cost-Saving Egress)"]
+        JumpBox["SSH Jump Boxes"]
+      end
 
       subgraph VpcEndpoints["PrivateLink & Gateway Endpoints"]
         EndpointSQS["Interface: SQS"]
@@ -116,8 +126,6 @@ graph TD
         EndpointBedrock["Interface: Bedrock"]
         EndpointECR["Interface: ECR (API/DKR)"]
         EndpointLogs["Interface: CloudWatch Logs"]
-        EndpointSTS["Interface: STS"]
-        EndpointGuardDuty["Interface: ECS-Agent/Telemetry"]
       end
       class VpcEndpoints blue;
 
@@ -125,6 +133,8 @@ graph TD
         Authorizer["Lambda Authorizer"]
         ApiService[["Fargate: FastAPI"]]
         WorkerService[["Fargate: AI Worker<br>(Graceful SIGTERM)"]]
+        WebhookTrigger["Lambda: Webhook Trigger"]
+        WebhookConsumer["Lambda: Webhook Consumer"]
       end
       class PrivateSubnets blue;
 
@@ -132,7 +142,7 @@ graph TD
     end
     class VPC purple;
 
-    subgraph AuditLogs["Audit & Diagnostic Logging (90-day Retention)"]
+    subgraph AuditLogs["Audit & Diagnostic Logging"]
       S3AccessLogs[("S3 Access Logs")]
       CloudFrontLogs[("CloudFront Logs")]
       ALBAccessLogs[("ALB Access Logs")]
@@ -161,16 +171,28 @@ graph TD
   ApiService -- "9. Presigned URL" --> Client
   ApiService -- "10. Log Job" --> EndpointDynamoDB
   EndpointDynamoDB -.-> JobsTable
+  ApiService -- "11. Resolve Keys" --> EndpointKMS
+  EndpointKMS -.-> KmsShared
 
-  Client -- "11. Upload" --> S3
-  S3 -- "12. Event" --> MainQueue
-  WorkerService -- "13. Pull Task" --> EndpointSQS
+  Client -- "12. Upload + Meta Headers" --> S3
+  S3 -- "13. Event" --> MainQueue
+
+  WorkerService -- "14. Pull Task" --> EndpointSQS
   EndpointSQS -.-> MainQueue
-  WorkerService -- "14. Stream File" --> EndpointS3
+  WorkerService -- "15. Stream File" --> EndpointS3
   EndpointS3 -.-> S3
-  WorkerService -- "15. Inference" --> EndpointBedrock
+  WorkerService -- "16. Inference" --> EndpointBedrock
   EndpointBedrock -.-> BedrockInference
-  WorkerService -- "16. Update Status" --> EndpointDynamoDB
+  WorkerService -- "17. Update Status" --> EndpointDynamoDB
+  EndpointDynamoDB -.-> JobsTable
+  WorkerService -- "18. Decrypt" --> EndpointKMS
+  EndpointKMS -.-> KmsJobs
+
+  JobsTable -- "19. Stream (Completed)" --> WebhookTrigger
+  WebhookTrigger -- "20. Queue Notification" --> EndpointSQS
+  EndpointSQS -.-> WebhookQueue
+  WebhookQueue -- "21. Process" --> WebhookConsumer
+  WebhookConsumer -- "22. Signed POST" --> WebhookReceiver
 
   S3 -.-> S3AccessLogs
   CloudFront -.-> CloudFrontLogs
@@ -179,262 +201,112 @@ graph TD
   APIGW -.-> APIGWLogs
   VPC -.-> FlowLogs
 
-  EventBridge -- "High Severity" --> SNS
-  MainQueue -- "DLQ/Capacity Alarms" --> SNS
-```
-
-### Key Architectural Decisions (ADRs)
-
-1.  **WAF & CloudFront (Edge Defense):**
-    - **Decision:** Use AWS WAF attached to CloudFront with a custom `X-Origin-Verify` header requirement at the API Gateway.
-    - **Why?** Protects against DDoS and common web exploits (SQLi, XSS) before traffic reaches our infrastructure. The custom header ensures that users cannot bypass the WAF by hitting the API Gateway endpoint directly.
-    - **Rate Limiting:** Enforces a global limit of 500 requests per 5 minutes and a stricter 100 requests per 5 minutes for the `/api/v1/request-upload` endpoint to prevent cost-bombing.
-2.  **API Gateway + Internal ALB (The Double Shield):**
-    - **Decision:** Split public ingress from private compute using a VPC Link and a cryptographically generated origin secret.
-    - **Why?** Ensures our application servers have **no public IP addresses**. The random 32-character `X-Origin-Verify` secret prevents unauthorized direct access to the API Gateway.
-3.  **On-Demand Compute (Scale-to-Zero):**
-    - **Decision:** Fargate for both API and Worker nodes, with a specific focus on **scaling the Worker to zero**.
-    - **Why?** PDF processing and LLM orchestration are bursty. The Worker service maintains a `min_capacity = 0`, automatically spinning up when the SQS backlog exceeds 5 messages per task and scaling back to zero when idle. This eliminates idle compute costs while ensuring 24/7 availability.
-4.  **Amazon Bedrock (Private Inference):**
-    - **Decision:** Serverless AI via Bedrock (Llama 3 8B).
-    - **Why?** Ensures data is **never used to train base models**. Via VPC Endpoints, data travels from S3 to Bedrock over the AWS private network, never crossing the public internet.
-5.  **SQS Standard vs. FIFO:**
-    - **Decision:** SQS Standard Queue.
-    - **Why?** For document processing, absolute ordering isn't required, but high throughput and "at-least-once" delivery are critical. FIFO adds complexity and cost that aren't justified for this use case.
-6.  **Immutable Images & Scanning (ECR):**
-    - **Decision:** Use ECR with Immutable tags and automated image scanning.
-    - **Why?** Prevents tag-overwriting (ensuring traceability) and automatically identifies vulnerabilities in container dependencies on every push.
-
----
-
-## Prerequisites & Environment Setup
-
-### Required Tools
-
-- **Terraform:** `>= 1.5`
-- **Python:** `3.11`
-- **AWS CLI:** `v2`
-- **Docker:** (For building images)
-- **Ruff:** (Optional, for local linting)
-
-### Deployment IAM Permissions
-
-The user/role deploying the stack needs a policy covering:
-
-- `AdministratorAccess` (recommended for initial setup) OR fine-grained permissions for: EC2 (VPC/SGs), ECS, ECR, S3, DynamoDB, SQS, KMS, Bedrock, IAM, CloudFront, WAF, and Lambda.
-
-## Deployment
-
-This project uses a highly secure, isolated remote state. Deployment is a two-phase process:
-
-**Phase 1: Bootstrap the Control Plane**
-
-1. Navigate to the `bootstrap/` directory.
-2. Run `terraform init` and `terraform apply`.
-3. When complete, Terraform will output values for the main stack `backend` code block in terraform/providers.tf.
-4. Copy that block and paste it into your main `terraform/providers.tf` file.
-
-**Phase 2: Deploy the Application**
-
-1. Navigate to the `terraform/` directory.
-2. Run `terraform init` (this connects to your newly created secure S3 state).
-3. Run `terraform apply` to deploy the main infrastructure.
-
-### First-Run Expectations (The ECR Hack)
-
-> ** Note on Initial Deployment:**
-> To allow Terraform to deploy ECS and ECR in a single click, the initial `terraform apply` pushes a 0-byte "dummy" image to the registries using a `null_resource` and local Docker execution.
->
-> Immediately after your first deployment, your ECS tasks will briefly enter a "CrashLoopBackOff" state. **This is expected and completely fine.** Once your GitHub Actions CI/CD pipeline runs and pushes the real Python application code, ECS will automatically recover and spin up healthy containers.
-
----
-
-## CI/CD Pipeline (GitHub Actions)
-
-The project includes a production-ready CI/CD pipeline in `.github/workflows/actions.yml`:
-
-1.  **Code Quality:** Automatically runs `ruff` to check formatting and linting rules.
-2.  **Deployment:** On merge to `main`, builds Docker images for both API and Worker, pushes them to ECR using the GitHub SHA as a unique tag, and triggers an ECS rolling update.
-3.  **Security:** Uses OIDC (OpenID Connect) for AWS authentication. No static long-lived AWS keys are stored in GitHub Secrets.
-
-_Note: To use the CI/CD, you must update the IAM Role ARN in `actions.yml` to match the one generated by `terraform/iam_github.tf`._
-
----
-
-## AI Model Access (Amazon Bedrock)
-
-This architecture utilizes **Meta Llama 3 8B Instruct** via Amazon Bedrock. Because AWS now automatically enables serverless foundation models on the first invocation, **no manual console configuration is required**.
-
-The system is configured as an **Expert Legal Administrative Assistant**, providing high-density, 3-sentence objective summaries of legal and professional documents.
-
-_(Note: We utilize the `eu.` Cross-Region Inference prefix in Terraform to guarantee high availability and bypass regional hardware limitations in Frankfurt)._
-
----
-
-## Environment Configuration (CORS)
-
-By default, the API restricts Cross-Origin Resource Sharing (CORS) to `http://localhost:3000` for local testing.
-
-Before deploying to production, you **must** pass your frontend's domain to Terraform to prevent the API from rejecting your web traffic. Create a `terraform.tfvars` file in the `terraform/` directory:
-
-```hcl
-# terraform/terraform.tfvars
-allowed_origins = "https://your-production-frontend.com,http://localhost:3000"
+  PrivateSubnets -- "Outbound (Yum/Pip)" --> NAT
+  ECR -.-> EndpointECR
+  NAT -- "Volume Crypt" --> KmsEbs
+  JumpBox -- "Volume Crypt" --> KmsEbs
+  WAFLogs -- "Encrypted Store" --> KmsWaf
 ```
 
 ---
 
-## API Integration Flow
+## Detailed Request Lifecycle
 
-This API uses an asynchronous, Zero-Trust upload architecture. Clients do not send files directly through the API Gateway.
+SecureAgents utilizes a four-phase asynchronous pipeline designed for zero-trust isolation and high-volume processing.
 
-1. **Request a Slot:** `POST /api/v1/request-upload`. The API returns a secure, presigned S3 URL (valid for 30 minutes) and registers the job as `PENDING_UPLOAD`.
-2. **Direct Upload:** The client securely uploads the PDF directly to the S3 URL using the provided cryptographic headers.
-3. **Poll Status:** The client polls `GET /api/v1/jobs/{job_id}`. Once S3 finishes receiving the file, it automatically triggers the AI worker, moving the state to `PROCESSING` and eventually `COMPLETED`.
+### Phase 1: The Negotiation (Handshake)
 
----
+The client does not send documents to the API. Instead, they request a "secure ticket" to upload directly to S3.
 
-## Operational Runbooks & Monitoring
+1. **Request:** Client sends `POST /api/v1/request-upload` with their `x-api-key`.
+2. **Double-Shield Validation:** WAF and API Gateway perform native header checks (`x-api-key` + `x-origin-verify`) before any compute is invoked.
+3. **Authorization:** A Lambda Authorizer verifies the key hash in DynamoDB and returns a secure `client_id` context.
+4. **Presigned Ticket:** The FastAPI backend initializes a job record and returns an **S3 Presigned POST URL** containing a set of `required_fields` (security tokens and metadata).
 
-### 1. Monitoring & Alerting
+### Phase 2: Ingestion (Direct Secure Upload)
 
-SecureAgents includes built-in CloudWatch Alarms and SNS notifications to ensure high availability:
+The client uploads the PDF directly to S3, bypassing the API to ensure performance and security.
 
-- **Container Insights:** ECS Cluster has Container Insights enabled, providing deep visibility into CPU, memory, and network usage per service and task.
-- **GuardDuty Findings:** High-severity GuardDuty findings (severity >= 7) are automatically routed via EventBridge to an SNS topic for immediate developer notification.
-- **DLQ Alarm:** Fires if any document fails processing 3 times and is moved to the Dead Letter Queue.
-- **Worker Capacity Alarm:** Fires if the SQS queue is backing up faster than the maximum number of workers (5) can process it.
-- **VPC Flow Logs:** All network traffic within the private VPC is logged and encrypted with KMS for security auditing.
+- **Mechanism:** Client performs a multipart `POST` to the provided S3 URL.
+- **Mandatory Metadata:** The client **must** include all `required_fields` from Phase 1. These include:
+  - `x-amz-server-side-encryption`: Forces AES-256 encryption via KMS.
+  - `x-amz-meta-client-id`: Cryptographically ties the object to the owner.
+  - `x-amz-meta-job-id`: Links the file to the specific processing job.
+- **Validation:** S3 verifies the backend-generated signature. If any metadata or the file size (50MB) is tampered with, the upload is rejected with a `403 Forbidden`.
 
-### 2. Rotating Client API Keys
+### Phase 3: Transformation (AI Pipeline)
 
-To rotate a key without downtime:
+The system processes the document in a fully isolated, zero-egress environment.
 
-1.  Generate a new key: `python scripts/client_key_script.py --client-id "ClientName"`
-2.  Provide the new key to the client.
-3.  Once the client confirms they have switched to the new key, an Administrator safely deactivates the old one using the management script:
+1. **Trigger:** S3 triggers an event notification to an SQS Work Queue.
+2. **Orchestration:** An AI Worker (Fargate) pulls the task and marks the job as `PROCESSING`.
+3. **Privacy-First Inference:** The worker extracts text and invokes **Claude 3 Haiku** via a VPC Endpoint. Data travels over the AWS private backbone—never the public internet.
+4. **Finalization:** The summary is saved to DynamoDB, and the status moves to `COMPLETED`.
 
-    ```bash
-    python scripts/client_key_script.py --deactivate "ak_live_123456789..."
-    ```
+### Phase 4: Notification (Asynchronous Webhook)
 
-    This instantly blocks the key at the Edge (`active = false`) and applies a 90-day TTL (`expires_at`), ensuring the hash remains available for security audits before DynamoDB automatically deletes it.
-    - _Note: For security, neither the API nor the Worker have permissions to modify this table._
+The client is notified instantly without the need for constant API polling.
 
-### 3. Handling Stuck Jobs & DLQ
-
-If a job is stuck in `PROCESSING` for > 15 minutes or fails 3 times, it moves to the `agents-dlq`.
-
-- **Check DLQ:** `aws sqs receive-message --queue-url <DLQ_URL>`
-- **Reprocess:** Use the AWS Management Console to "Start DLQ redrive" back to the main queue, or manually fix the issue (e.g., Bedrock quota reached) and redrive.
-- **Stuck Jobs:** Check if the worker task crashed. Fargate will automatically restart it, but the job status in DynamoDB might need manual reset to `PENDING_UPLOAD` to allow a retry.
-
-### 4. Tailing Logs
-
-All logs are centralized in CloudWatch and encrypted with KMS.
-
-- **API Logs:** `aws logs tail /aws/ecs/agents-api --follow`
-- **Worker Logs:** `aws logs tail /aws/ecs/agents-worker --follow`
-- **Authorizer:** `aws logs tail /aws/lambda/agents-authorizer --follow`
+1. **Event Trigger:** A DynamoDB Stream detects the `COMPLETED` status.
+2. **Signed Delivery:** A Consumer Lambda fetches the client's `webhook_secret`, signs the payload with **HMAC-SHA256**, and sends a `POST` request to the client's endpoint.
+3. **Headers:** The client receives `X-SecureAgents-Signature` to verify the payload's integrity.
 
 ---
 
-## Security Policy & Threat Model
+## Low-Code & No-Code Integration
 
-### Threat Model
+SecureAgents is designed to be "Integration-Ready" for tools like **Make.com**, **Zapier**, and **n8n**.
 
-- **DDoS/Bot Attack:** Mitigated by AWS WAF rate-limiting (Global 500/5m and Upload-specific 100/5m) and standard security rule sets.
-- **API Key Theft:** Mitigated by hashing keys in DynamoDB and requiring `X-Origin-Verify` headers to prevent direct Gateway access.
-- **Data Exfiltration:** Mitigated by Zero-Egress VPC design; containers have no path to the public internet.
-- **Unauthorized Data Access:** S3 and DynamoDB policies restrict access strictly to the VPC Endpoints and Task Roles.
-- **Malicious Behavior:** GuardDuty monitors for suspicious runtime behavior and unauthorized S3 data access patterns.
-
-### Data Handling Policy
-
-- **Transient Storage:** Documents are stored in S3 only for the duration of processing.
-- **Implemented Auto-Deletion (TTLs):**
-  - **Jobs Table:** Records expire after **30 days** (auto-deleted by DynamoDB TTL). Note: Jobs that remain in `PENDING_UPLOAD` state are automatically purged after **24 hours**.
-  - **API Keys:** Deactivated keys expire after **90 days**.
-  - **S3 Storage:** S3 lifecycle policies automatically purge all documents and versions after **30 days**.
-  - **Audit Logs:** **CloudFront**, **ALB Access Logs**, and **S3 Server Access Logs** are automatically purged after **90 days**.
-  - **CloudWatch Logs:** Application and system logs are retained for **30 days** (configurable via `log_retention_days`).
-- **Data Reliability:** **Point-In-Time Recovery (PITR)** is enabled for all DynamoDB tables, allowing for recovery to any second in the last 35 days.
-
-### Compliance Posture
-
-SecureAgents is designed to be **HIPAA and SOC 2 ready**. It uses AES-256 encryption at rest (KMS), TLS 1.2+ in transit, and maintains detailed audit logs in CloudWatch and DynamoDB PITR.
+- **Simplified Ingestion:** Low-code users can map the `required_fields` from the API response directly into an HTTP module to handle direct S3 uploads without writing code.
+- **Automation Ready:** Webhooks allow for instant triggers in CRM platforms (Salesforce, HubSpot) or collaboration tools (Slack, Microsoft Teams) as soon as document processing is finished.
 
 ---
 
-## API Reference
+## Key Architectural Decisions (ADRs)
 
-### Base URL
-
-- **CloudFront URL:** `https://<distribution-id>.cloudfront.net` (Get this from `terraform output`)
-
-### 1. Request Upload Slot
-
-`POST /api/v1/request-upload`
-
-- **Header:** `x-api-key: <your-key>`
-- **Body:** `{"filename": "document.pdf"}`
-- **Success (202):**
-  ```json
-  {
-    "job_id": "uuid",
-    "upload_url": "s3-presigned-url",
-    "required_fields": {...},
-    "instructions": "..."
-  }
-  ```
-
-### 2. Check Job Status
-
-`GET /api/v1/jobs/{job_id}`
-
-- **Header:** `x-api-key: <your-key>`
-- **Success (200):**
-  ```json
-  {
-    "job_id": "uuid",
-    "status": "COMPLETED",
-    "created_at": "timestamp",
-    "result": "Objective 3-sentence legal summary..."
-  }
-  ```
+1.  **Claude 3 Haiku (Amazon Bedrock):**
+    - **Decision:** Use `anthropic.claude-3-haiku-20240307-v1:0` via Bedrock.
+    - **Why?** Haiku provides the optimal balance of speed, cost, and intelligence for high-density document summarization. It is significantly faster and more cost-effective than larger models while maintaining excellent instruction following.
+2.  **NAT Instances vs NAT Gateways:**
+    - **Decision:** Use managed NAT Instances (t3.micro) for outbound traffic.
+    - **Why?** For a low-egress B2B SaaS, NAT Gateways (~$32/month/AZ) are unnecessarily expensive. NAT instances provide the same functionality at a fraction of the cost (~$7/month).
+3.  **Asynchronous HMAC Webhooks:**
+    - **Decision:** Implement a SQS-backed webhook system with SHA256 signatures.
+    - **Why?** Eliminates the need for clients to poll for status. SQS ensures we don't lose notifications if the client's endpoint is briefly down. HMAC signatures allow clients to securely trust the data without public IP whitelisting.
+4.  **Native Identity Source Validation:**
+    - **Decision:** Perform header checks at the API Gateway level.
+    - **Why?** Prevents unauthorized requests from even invoking our Lambda Authorizer, saving on compute costs and reducing the attack surface.
 
 ---
 
-## Testing Documentation
+## CloudWatch & Observability
 
-### Local Development
+SecureAgents includes a comprehensive monitoring suite to ensure security and operational stability:
 
-The apps use Pydantic for configuration. You can run them locally by pointing to real AWS resources (if you have local creds):
+### 1. Centralized Logging
 
-```bash
-cd agent-api
-export S3_BUCKET_NAME=your-bucket
-export DYNAMODB_JOBS_TABLE=agents_Jobs
-uvicorn app.main:app --reload --port 8000
-```
+All system logs are encrypted with Customer Managed Keys (CMKs) and retained for 30 days:
 
-### End-to-End Test (curl)
+- **API & Worker Logs:** Full application traces from ECS Fargate.
+- **VPC Flow Logs:** Captures all IP traffic within the VPC for security auditing.
+- **Audit Trails:** Specialized logs for **WAF (Edge)**, **API Gateway (Entry)**, and **S3 (Storage Access)**.
+- **Infrastructure Logs:** Boot logs for **NAT Instances** and **Jump Boxes**.
 
-```bash
-# 1. Request Upload
-curl -X POST https://<CF_URL>/api/v1/request-upload \
-     -H "x-api-key: ak_live_..." \
-     -H "Content-Type: application/json" \
-     -d '{"filename": "contract.pdf"}'
+### 2. Proactive Alerting (SNS)
 
-# 2. Upload File (example using fields from step 1)
-curl -X POST <upload_url> \
-     -F "key=..." -F "x-amz-server-side-encryption=aws:kms" \
-     -F "file=@contract.pdf"
+High-priority alerts are sent via SNS to the developer team:
 
-# 3. Poll for Status
-curl -H "x-api-key: ak_live_..." https://<CF_URL>/api/v1/jobs/<job_id>
-```
+- **Security Alerts:** Triggered by **GuardDuty Findings** (Severity >= 7).
+- **Processing Failures:** Fires if the **Agent DLQ** or **Webhook DLQ** receives a failed message.
+- **Infrastructure Health:** Alerts for **NAT Instance status check failures** or **High ALB 5XX error rates**.
+- **Performance Bottlenecks:** Alerts for **High ALB Latency (>1s)** or **SQS Stalling** (messages older than 20 mins).
+
+### 3. Operational Dashboard
+
+A centralized CloudWatch Dashboard provides real-time visibility into:
+
+- **Traffic Health:** Request counts vs. 5XX error rates.
+- **Queue Performance:** Tasks waiting, tasks in progress, and webhook backlog status.
 
 ---
 
@@ -445,13 +317,104 @@ curl -H "x-api-key: ak_live_..." https://<CF_URL>/api/v1/jobs/<job_id>
 | **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.                 |
 | **VPC Endpoints**      | ~$115 - $140     | 9x Endpoints (S3, SQS, KMS, Bedrock, ECR, etc.) in 2 AZs. |
 | **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0).   |
+| **NAT Instances**      | ~$14             | 2x t3.micro instances (one per AZ) vs ~$64 for NAT GW.    |
 | **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.             |
 | **Database & Storage** | ~$5 - $10        | S3, DynamoDB, SQS (pay-per-request/GB) + Audit Logs.      |
-| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Llama 3 is highly affordable).   |
-| **Total Base**         | **~$175 - $225** | Production-grade security for less than $7.50/day.        |
+| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Claude 3 Haiku is very cheap).   |
+| **Total Base**         | **~$185 - $240** | Production-grade security for less than $8.00/day.        |
+
+---
+
+## Prerequisites & Environment Setup
+
+### Required Tools
+
+- **Terraform:** `>= 1.5`
+- **Python:** `3.11` (Workers) / `3.13` (Lambdas)
+- **AWS CLI:** `v2`
+- **Docker:** (For building images)
+
+## Deployment
+
+**Phase 1: Bootstrap the Control Plane**
+
+1. Navigate to `bootstrap/`.
+2. Run `terraform init` and `terraform apply`.
+3. Copy the backend configuration to `terraform/providers.tf`.
+
+**Phase 2: Deploy the Application**
+
+1. Navigate to `terraform/`.
+2. Run `terraform init` and `terraform apply`.
+
+---
+
+## Operational Runbooks
+
+### 1. Rotating Client API Keys & Webhooks
+
+Use the management script to generate or revoke access:
+
+```bash
+# Generate a new key with an optional webhook
+python scripts/client_script.py --generate --client-id "ClientName" --webhook-url "https://api.client.com/webhook"
+
+# Deactivate a key (schedules deletion in 90 days)
+python scripts/client_script.py --deactivate --key "ak_live_..."
+```
+
+### 2. Monitoring Webhook Failures
+
+If webhooks fail to deliver, they move to the `agents-webhook-dlq`.
+
+- **Check DLQ:** `aws sqs receive-message --queue-url <WEBHOOK_DLQ_URL>`
+- **Check Logs:** `aws logs tail /aws/lambda/agents-webhook-consumer --follow`
+
+---
+
+## API Reference
+
+### 1. Request Upload Slot
+
+`POST /api/v1/request-upload`
+
+- **Headers:** `x-api-key: <key>`
+- **Body:** `{"filename": "document.pdf"}`
+
+### 2. Uploading the File
+
+You **must** include the metadata headers returned in the `required_fields`:
+
+- `x-amz-meta-client-id`
+- `x-amz-meta-job-id`
+- `x-amz-server-side-encryption: aws:kms`
+
+### 3. Receiving Webhooks
+
+Your endpoint will receive a POST request with:
+
+- **Header:** `X-SecureAgents-Signature: <hmac-sha256-hash>`
+- **Body:**
+  ```json
+  {
+    "event": "JOB_COMPLETED",
+    "job_id": "uuid",
+    "status": "COMPLETED",
+    "summary": "..."
+  }
+  ```
+
+---
+
+## Data Handling Policy
+
+- **Jobs Table:** Records expire after **30 days** (via TTL).
+- **S3 Storage:** Documents are automatically purged after **30 days**.
+- **Audit Logs:** Retained for **90 days**.
+- **Point-In-Time Recovery:** Enabled for all DynamoDB tables.
 
 ---
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License. See [LICENSE](LICENSE) for details.
