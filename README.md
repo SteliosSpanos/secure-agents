@@ -65,7 +65,7 @@ The client does not send documents to the API. Instead, they request a "secure t
 3. **Authorization:** A Lambda Authorizer verifies the key hash in DynamoDB and returns a secure `client_id` context.
 4. **Presigned Ticket:** The FastAPI backend initializes a job record and returns an **S3 Presigned POST URL** containing a set of `required_fields` (security tokens and metadata).
 
-![Architecture Diagram 1](./assets/secure-agents-1.png)
+![Architecture Diagram 1](./assets/secure-agents-1.svg)
 
 ### Phase 2: Ingestion (Direct Secure Upload)
 The client uploads the PDF directly to S3, bypassing the API to ensure performance and security.
