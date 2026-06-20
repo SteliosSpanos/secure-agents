@@ -218,28 +218,51 @@ If webhooks fail to deliver, they move to the `agents-webhook-dlq`.
 ## API Reference
 
 ### 1. Request Upload Slot
-`POST /api/v1/request-upload`
-- **Headers:** `x-api-key: <key>`
-- **Body:** `{"filename": "document.pdf"}`
 
-### 2. Uploading the File
-You **must** include the metadata headers returned in the `required_fields`:
-- `x-amz-meta-client-id`
-- `x-amz-meta-job-id`
-- `x-amz-server-side-encryption: aws:kms`
+`POST /api/v1/request-upload`
+
+**Headers:**
+- `x-api-key: <your-api-key>`
+- `x-origin-verify: <your-origin-token>`
+
+**Body:**
+
+```json
+{
+  "filename": "document.pdf"
+}
+```
+
+### 2. Uploading the File (Direct to S3)
+
+You must perform a `multipart/form-data` POST request to the S3 URL.
+
+> **CRITICAL:** The metadata returned in `required_fields` from Step 1 must be appended as **Form Data fields**, not HTTP headers! Ensure these fields are appended **before** the actual file.
+
+- `x-amz-server-side-encryption`: `aws:kms`
+- `x-amz-server-side-encryption-aws-kms-key-id`: `<kms-key-arn>`
+- `x-amz-meta-client-id`: `<client-id>`
+- `x-amz-meta-job-id`: `<job-id>`
+- `Content-Type`: `application/pdf`
+- `file`: `<The actual PDF file buffer/blob>` (Must be the last field)
 
 ### 3. Receiving Webhooks
-Your endpoint will receive a POST request with:
-- **Header:** `X-SecureAgents-Signature: <hmac-sha256-hash>`
-- **Body:**
-  ```json
-  {
-    "event": "JOB_COMPLETED",
-    "job_id": "uuid",
-    "status": "COMPLETED",
-    "summary": "..."
-  }
-  ```
+
+Your endpoint will receive a `POST` request once the AI pipeline finishes processing:
+
+**Headers:**
+- `X-SecureAgents-Signature: <hmac-sha256-hash>` (Note: validate this hash using your webhook secret to ensure the payload came from our system)
+
+**Body:**
+
+```json
+{
+  "event": "JOB_COMPLETED",
+  "job_id": "uuid",
+  "status": "COMPLETED",
+  "summary": "..."
+}
+```
 
 ---
 
