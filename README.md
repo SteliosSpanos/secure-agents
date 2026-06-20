@@ -68,13 +68,24 @@ The client does not send documents to the API. Instead, they request a "secure t
 ![Architecture Diagram 1](./assets/secure-agents-1.svg)
 
 ### Phase 2: Ingestion (Direct Secure Upload)
+
 The client uploads the PDF directly to S3, bypassing the API to ensure performance and security.
-- **Mechanism:** Client performs a multipart `POST` to the provided S3 URL.
-- **Mandatory Metadata:** The client **must** include all `required_fields` from Phase 1. These include:
-    - `x-amz-server-side-encryption`: Forces AES-256 encryption via KMS.
-    - `x-amz-meta-client-id`: Cryptographically ties the object to the owner.
-    - `x-amz-meta-job-id`: Links the file to the specific processing job.
-- **Validation:** S3 verifies the backend-generated signature. If any metadata or the file size (50MB) is tampered with, the upload is rejected with a `403 Forbidden`.
+
+#### Mechanism
+The client performs a multipart `POST` request directly to the provided S3 URL.
+
+#### Mandatory Metadata
+To successfully complete the upload, the client must include all the `required_fields` generated during Phase 1. These critical security fields include:
+* **`x-amz-server-side-encryption`**: Forces AES-256 encryption via AWS KMS before the file is saved.
+* **`x-amz-server-side-encryption-aws-kms-key-id`**: Specifies the exact KMS Key ARN that S3 must use for the encryption.
+* **`x-amz-meta-client-id`**: Cryptographically ties the uploaded object to the specific client/owner.
+* **`x-amz-meta-job-id`**: Links the file directly to the initialized processing job in the database.
+* **`Content-Type`**: Must be explicitly set to `application/pdf` to prevent malicious or unsupported file types from being ingested.
+
+#### Native Validation
+Amazon S3 natively verifies the backend-generated cryptographic signature upon receiving the request. If the client attempts to tamper with any metadata, alters the expected content type, or if the file size exceeds the **50MB limit**, S3 will instantly reject the upload and return a **403 Forbidden** error.
+
+![Arcitecture Diagram 2](./assets/secure-agents-2.svg)
 
 ### Phase 3: Transformation (AI Pipeline)
 The system processes the document in a fully isolated, zero-egress environment.
