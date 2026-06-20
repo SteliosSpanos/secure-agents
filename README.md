@@ -97,11 +97,24 @@ The system processes the document in a fully isolated, zero-egress environment.
 ![Architecture Diagram 3](./assets/secure-agents-3.svg)
 
 ### Phase 4: Notification (Asynchronous Webhook)
-The client is notified instantly without the need for constant API polling.
-1. **Event Trigger:** A DynamoDB Stream detects the `COMPLETED` status.
-2. **Signed Delivery:** A Consumer Lambda fetches the client's `webhook_secret`, signs the payload with **HMAC-SHA256**, and sends a `POST` request to the client's endpoint.
-3. **Headers:** The client receives `X-SecureAgents-Signature` to verify the payload's integrity.
 
+The client is notified instantly when their document is ready, completely eliminating the need for inefficient, constant API polling. This architecture utilizes a decoupled queue system to guarantee delivery even if the client's endpoint experiences temporary downtime.
+
+#### Mechanism & Orchestration
+* **Event Trigger:** As soon as the AI Worker updates the job status, a **DynamoDB Stream** detects the `COMPLETED` state and fires an event.
+* **Event Routing:** A **Lambda Webhook Trigger** catches the stream event and pushes a notification message into an **SQS Webhook Queue**. 
+* **Decoupled Processing:** A separate **Lambda Webhook Consumer** polls the SQS queue, pulling messages for final delivery. This decoupling allows for robust retry mechanisms and Dead Letter Queues (DLQs) if a client endpoint is unreachable.
+
+#### Secure Delivery (Signed Webhooks)
+To guarantee that the webhook is authentic and hasn't been intercepted or tampered with:
+1. **Secret Retrieval:** The Lambda Webhook Consumer queries DynamoDB to fetch the client's designated webhook URL and their unique `webhook_secret`.
+2. **Cryptographic Signing:** The Lambda signs the JSON payload using the **HMAC-SHA256** algorithm.
+3. **Dispatch:** A `POST` request containing the job summary is sent directly to the client's endpoint. 
+
+#### Client Validation
+The client receives the `X-SecureAgents-Signature` header alongside the payload. By hashing the incoming body with their local copy of the `webhook_secret`, the client can perfectly verify the payload's origin and integrity before processing the AI-generated summary.
+
+![Architecture Diagram 4](./assets/secure-agents-4.svg)
 ---
 
 ## Low-Code & No-Code Integration
