@@ -91,8 +91,10 @@ Amazon S3 natively verifies the backend-generated cryptographic signature upon r
 The system processes the document in a fully isolated, zero-egress environment.
 1. **Trigger:** S3 triggers an event notification to an SQS Work Queue.
 2. **Orchestration:** An AI Worker (Fargate) pulls the task and marks the job as `PROCESSING`.
-3. **Privacy-First Inference:** The worker extracts text and invokes **Claude 3 Haiku** via a VPC Endpoint. Data travels over the AWS private backbone—never the public internet.
+3. **Privacy-First Inference:** The worker extracts text and invokes **Claude 3 Haiku** via a VPC Endpoint. Data travels over the AWS private backbone, never the public internet.
 4. **Finalization:** The summary is saved to DynamoDB, and the status moves to `COMPLETED`.
+
+![Architecture Diagram 3](./assets/secure-agents-3.svg)
 
 ### Phase 4: Notification (Asynchronous Webhook)
 The client is notified instantly without the need for constant API polling.
