@@ -1,0 +1,102 @@
+name: Rollback
+
+# Manual-only workflow that appears as "Run workflow" button under the Actions tab
+# Redeploys a specific, already-built image without needing a new commit or full rebuild
+on:
+  workflow_dispatch:
+    inputs:
+      service:
+        description: "Which service to roll back"
+        required: true 
+        type: choice 
+        options: [api, worker]
+      sha:
+        description: "Git SHA to redeploy. Leave blank to use the last known good SHA recorded in SSM"
+        required: false 
+
+
+permissions:
+  id-token: write 
+  contents: read
+
+
+env:
+  AWS_REGION: "eu-central-1"
+  ECS_CLUSTER: "agents-cluster"
+
+
+jobs:
+  rollback:
+    name: Rollback ${{ inputs.service }}
+    runs-on: ubuntu-latest 
+    steps:
+      - name: Checkout Code 
+        uses: actions/checkout@v4 
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4 
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR 
+        id: login-ecr 
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Resolve service settings
+        id: settings 
+        run: |
+          if [ "${{ inputs.service }}" == "api" ]; then 
+            echo "ecr_repo=agents-api" >> "$GITHUB_OUTPUT"
+            echo "task_def_family==agents-api" >> "$GITHUB_OUTPUT"
+            echo "ecs_service=agents-api-service" >> "$GITHUB_OUTPUT"
+            echo "container_name==fastapi-container" >> "$GITHUB_OUTPUT"
+            echo "ssm_param=/agents/api/last-stable-sha" >> "$GITHUB_OUTPUT"
+          else 
+            echo "ecr_repo=agents-worker" >> "$GITHUB_OUTPUT"
+            echo "task_def_family=agents-worker" >> "$GITHUB_OUTPUT"
+            echo "ecs_service=agents-worker-service" >> "$GITHUB_OUTPUT"
+            echo "container_name=agent-worker" >> "$GITHUB_OUTPUT"
+            echo "ssm_param=/agents/worker/last-stable-sha" >> "$GITHUB_OUTPUT"
+          fi 
+
+      # If no SHA was typed in, fall back to whatever the corresponding deploy workflow last recorded as stable 
+      - name: Resolve target SHA 
+        id: target 
+        run: |
+          if [ -n "${{ inputs.sha }}" ]; then 
+            echo "sha=${{ inputs.sha }}" >> "$GITHUB_OUTPUT"
+          else 
+            LAST_GOOD=$(aws ssm get-parameter \
+              --name "${{ steps.settings.outputs.ssm_param }}" \
+              --query 'Parameter.Value' -- output text)
+            echo "sha=$LAST_GOOD" >> "$GITHUB_OUTPUT"
+          fi 
+
+      - name: Verify the target image exists in ECR 
+        run: |
+          aws ecr describe-images \
+            --repository-name ${{ steps.settings.outputs.ecr_repo }} \
+            --image-ids imageTag=${{ steps.target.outputs.sha }}
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition ${{ steps.settings.outputs.task_def_family }} \
+            --query taskDefinition > task-def.json
+
+      - name: Render task definition with rollback image 
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json 
+          container_name: ${{ steps.settings.outputs.container_name }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ steps.settings.outputs.ecr_repo }}:${{ steps.target.outputs.sha }}
+
+      - name: Deploy rollback to ECS 
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ steps.settings.outputs.ecs_service }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true 

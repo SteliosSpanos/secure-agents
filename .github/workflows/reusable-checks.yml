@@ -1,0 +1,67 @@
+name: Quality & Test Checks 
+
+on:
+  workflow_call:
+    inputs:
+      working-directory:
+        description: "Path to the service being checked"
+        required: true
+        type: string
+      run-tests:
+        description: "Whether to run the pytest suite for this service. Set to false for services that don't have tests yet"
+        required: false
+        type: boolean
+        default: true
+
+jobs:
+  code-quality:
+    name: Code Quality (${{ inputs.working-directory }})
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code 
+        uses: actions/checkout@v4
+
+      - name: Run Ruff Linter
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "check ${{ inputs.working-directory }}"
+
+      - name: Run Ruff Formatter
+        uses: astral-sh/ruff-action@v3
+        with:
+          args: "format --check ${{ inputs.working-directory }}"
+
+  test:
+    name: Unit Tests (${{ inputs.working-directory }})
+    # Skipped (not failed) when run-tests is false
+    if: ${{ inputs.run-tests }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code 
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Cache pip dependencies
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/pip 
+          key: ${{ runner.os }}-pip-${{ hashFiles(format('{0}/requirements-test.txt', inputs.working-directory)) }}
+
+      - name: Install test dependencies
+        run: pip install -r ${{ inputs.working-directory }}/requirements-test.txt 
+
+      - name: Run tests with coverage
+        working-directory: ${{ inputs.working-directory }}
+        run: pytest -v --cop=app --cov-report=xml --cov-fail-under=80 
+
+      - name: Upload coverage report 
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-${{ inputs.working-directory }}
+          path: ${{ inputs.working-directory }}/coverage.xml
+        
+

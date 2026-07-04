@@ -1,0 +1,103 @@
+name: Deploy Agent Worker
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "agent-worker/**"
+      - ".github/workflows/deploy-worker.yml"
+      - ".github/workflows/reusable-checks.yml"
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "agent-worker/**"
+
+  # Lets you re-run a deploy manually from the Actions tab without needing an empty commit
+  workflow_dispatch: {}
+
+
+concurrency:
+  group: deploy-worker-${{ github.ref }}
+  cancel-in-progress: true
+
+
+env:
+  AWS_REGION: "eu-central-1"
+  ECR_REPOSITORY: "agents-worker"
+  TASK_DEF_FAMILY: "agents-worker"
+  ECS_CLUSTER: "agents-cluster"
+  ECS_SERVICE: "agents-worker-service"
+  CONTAINER_NAME: "agent-worker"
+  SSM_LAST_GOOD_SHA_PARAM: "/agents/worker/last-stable-sha"
+
+
+permissions:
+  id-token: write 
+  contents: read
+
+
+jobs:
+  checks:
+    name: Quality & Test Checks 
+    uses: ./.github/workflows/reusable-checks.yml 
+    with:
+      working-directory: agents-worker
+      run-tests: false
+
+  deploy:
+    name: Build and Deploy Worker 
+    needs: checks 
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest 
+    steps:
+      - name: Checkout Code 
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR 
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag and push image to ECR 
+        env: 
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$ECR_REPOSITORY:$TAG ./agent-worker 
+          docker push $REGISTRY/$ECR_REPOSITORY:$TAG 
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $TASK_DEF_FAMILY \
+            --query taskDefinition > task-def.json
+
+      - name: Render new task definition with updated image 
+        id: render-task-def 
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json 
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Deploy to ECS 
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true 
+
+      - name: Record last-known good SHA in SSM 
+        run: |
+          aws ssm put-parameter \
+            --name "$SSM_LAST_GOOD_SHA_PARAM" \
+            --value "${{ github.sha }}" \
+            --type String \
+            --overwrite
+          

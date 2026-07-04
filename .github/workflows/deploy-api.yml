@@ -1,0 +1,111 @@
+name: Deploy Agent API
+
+on:
+  push:
+    branches: ["main"]
+    paths:
+      - "agent-api/**"
+      - ".github/workflows/deploy-api.yml"
+      - ".github/workflows/reusable-checks.yml"
+
+  pull_request:
+    branches: ["main"]
+    paths:
+      - "agent-api/**"
+
+  # Lets you re-run a deploy manually from the Actions tab without needing an empty commit
+  workflow_dispatch: {}
+
+
+# Cancels in-progress runs of THIS workflow on the same ref 
+concurrency:
+  group: deploy-api-${{ github.ref }}
+  cancel-in-progress: true
+
+
+env:
+  AWS_REGION: "eu-central-1"
+  ECR_REPOSITORY: "agents-api"
+  # The task-def family and the ECR repo name are two different concepts and are the same only by naming convention
+  TASK_DEF_FAMILY: "agents-api"
+  ECS_CLUSTER: "agents-cluster"
+  ECS_SERVICE: "agents-api-service"
+  CONTAINER_NAME: "fastapi-container"
+  SSM_LAST_GOOD_SHA_PARAM: "/agents/api/last-stable-sha"
+
+
+permissions:
+  id-token: write 
+  contents: read 
+
+
+jobs:
+  checks:
+    name: Quality & Test Checks 
+    uses: ./.github/workflows/reusable-checks.yml 
+    with:
+      working-directory: agent-api 
+      run-tests: false # Set this to true once a pytest suite exists 
+
+  deploy:
+    name: Build and Deploy API 
+    needs: checks 
+    # Runs on a push straight to main or a manual dispatch. 
+    # PRs only get linted, never deployed
+    if: github.ref == 'refs/heads/main' && github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR 
+        id: login-ecr 
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build, tag and push image to ECR 
+        env: 
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          TAG: ${{ github.sha }}
+        run: |
+          docker build -t $REGISTRY/$ECR_REPOSITORY:$TAG ./agent-api 
+          docker push $REGISTRY/$ECR_REPOSITORY:$TAG
+
+      - name: Download current ECS task definition
+        run: |
+          aws ecs describe-task-definition \
+            --task-definition $TASK_DEF_FAMILY \
+            --query taskDefinition > task-def.json
+
+      - name: Render new task definition with updated image 
+        id: render-task-def
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-def.json 
+          container-name: ${{ env.CONTAINER_NAME }}
+          image: ${{ steps.login-ecr.outputs.registry }}/${{ env.ECR_REPOSITORY }}:${{ github.sha }}
+
+      - name: Deploy to ECS 
+        uses: aws-action/amazon-ecs-deploy-task-definition@v1
+        with:
+          task-definition: ${{ steps.render-task-def.outputs.task-definition }}
+          service: ${{ env.ECS_SERVICE }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          wait-for-service-stability: true # Job doesn't report success until ECS confirms the new tasks are actually healthy
+
+      # Only reached if the step above succeeded 
+      # This is what rollback.yml reads by default
+      - name: Record last-known good SHA in SSM 
+        run: |
+          aws ssm put-parameter \
+            --name "$SSM_LAST_GOOD_SHA_PARAM" \
+            --value "${{ github.sha }}" \
+            --type String \
+            --overwrite
+
+
