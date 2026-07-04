@@ -29,10 +29,10 @@ data "aws_iam_policy_document" "github_assume_role" {
       variable = "token.actions.githubusercontent.com:aud"
       values   = ["sts.amazonaws.com"]
     }
-    condition { // Only allow our specific repository to assume this role
+    condition { // Only allow our specific repository and main branch to assume this role 
       test     = "StringLike"
       variable = "token.actions.githubusercontent.com:sub"
-      values   = ["repo:SteliosSpanos/secure-agents:*"]
+      values   = ["repo:SteliosSpanos/secure-agents:ref:refs/heads/main"]
     }
   }
 }
@@ -75,6 +75,38 @@ data "aws_iam_policy_document" "github_actions_permissions" {
     resources = [
       aws_ecs_service.api_service.id,
       aws_ecs_service.worker_service.id
+    ]
+  }
+
+  statement {
+    effect = "Allow"
+    actions = [
+      "ecs:RegisterTaskDefinition",
+      "ecs:DescribeTaskDefinition"
+    ]
+    resources = ["*"] // ECS doesn't support resource-level scoping for these two actions 
+  }
+
+  statement {
+    effect = "Allow"
+    actions = ["iam:PassRole"]
+    resources = [
+      aws_iam_role.api_task_role.arn,
+      aws_iam_role.agent_task_role.arn,
+      aws_iam_role.ecs_execution_role.arn
+    ]
+    condition {
+      test = "StringEquals"
+      variable = "iam:PassedToService"
+      values = ["ecs-tasks.amazonaws.com"]
+    }
+  }
+
+  statement {
+    effect = "Allow"
+    actions = ["ssm:PutParameter", "ssm:GetParameter"]
+    resources = [
+      "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/agents/*"
     ]
   }
 }
