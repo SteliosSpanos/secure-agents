@@ -24,12 +24,14 @@ jobs:
       - name: Run Ruff Linter
         uses: astral-sh/ruff-action@v3
         with:
-          args: "check ${{ inputs.working-directory }}"
+          args: "check"
+          src: "./${{ inputs.working-directory }}"
 
       - name: Run Ruff Formatter
         uses: astral-sh/ruff-action@v3
         with:
-          args: "format --check ${{ inputs.working-directory }}"
+          args: "format --check"
+          src: "./${{ inputs.working-directory }}"
 
   test:
     name: Unit Tests (${{ inputs.working-directory }})

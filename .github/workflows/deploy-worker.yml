@@ -41,7 +41,7 @@ jobs:
     name: Quality & Test Checks 
     uses: ./.github/workflows/reusable-checks.yml 
     with:
-      working-directory: agents-worker
+      working-directory: agent-worker
       run-tests: false
 
   deploy:
