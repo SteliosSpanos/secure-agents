@@ -8,7 +8,7 @@ SecureAgents is a high-security, B2B SaaS infrastructure designed for industries
 
 ```text
 .
-├── .github/workflows/      # CI/CD Pipeline (Ruff + ECR/ECS Deploy)
+├── .github/workflows/      # CI/CD: per-service lint/test/deploy + manual rollback
 ├── agent-api/              # FastAPI application v1.0.1 (Ingress & Status)
 ├── agent-worker/           # Python 3.11 worker (PDF Processing & Bedrock AI)
 ├── bootstrap/              # Terraform for remote state (S3/DynamoDB)
@@ -140,6 +140,35 @@ SecureAgents is designed to be "Integration-Ready" for tools like **Make.com**, 
     - **Decision:** Perform header checks at the API Gateway level.
     - **Why?** Prevents unauthorized requests from even invoking our Lambda Authorizer, saving on compute costs and reducing the attack surface.
 
+---
+
+## GitHub Actions & CI/CD Pipeline
+ 
+Deployments are handled by four independent workflow files in `.github/workflows/`, split per-service so a change to one component doesn't rebuild or redeploy the other:
+ 
+| Workflow | Trigger | Purpose |
+|---|---|---|
+| `reusable-checks.yml` | Called by the two deploy workflows (not triggered directly) | Runs Ruff lint + format checks, and the pytest suite (with an 80% coverage floor) for whichever service calls it |
+| `deploy-api.yml` | Push to `main` touching `agent-api/**` | Builds, tests, and deploys the FastAPI service |
+| `deploy-worker.yml` | Push to `main` touching `agent-worker/**` | Builds, tests, and deploys the AI worker, including a real ECS smoke test before promoting |
+| `rollback.yml` | Manual (`workflow_dispatch`) only | Redeploys a previous image for either service on demand |
+ 
+### Build & Deploy Flow
+ 
+Each deploy workflow runs lint + tests, builds the Docker image, smoke-tests it locally (a clean import of the app with dummy config, catching broken dependencies or import errors before anything is pushed), pushes the image to ECR, then registers a new ECS task definition revision.
+ 
+For the worker specifically, that new revision is **run as a real ECS task before the live service is ever pointed at it**. It must stay healthy in the real network and IAM context for 20 seconds, or the deploy stops there and the currently running service is left untouched. Only a task definition revision that has passed this check gets promoted to `agents-worker-service`.
+ 
+### Image Tagging & Rollback
+ 
+ECR repositories use `IMMUTABLE` tags so once an image is pushed under a tag (the git commit SHA), that tag can never be repointed to different content, closing off a class of supply-chain attack where a tag is silently swapped after deployment. Because tags can't move, "what's currently live and known-good" is tracked separately: each successful deploy writes its SHA to an SSM Parameter (`/agents/api/last-stable-sha`, `/agents/worker/last-stable-sha`).
+ 
+To roll back, run the **Rollback** workflow manually from the Actions tab, choose `api` or `worker`, and optionally provide a specific SHA (leaving it blank rolls back to whatever SHA is currently recorded in SSM).
+ 
+### Authentication
+ 
+All workflows authenticate to AWS via OIDC federation (`GithubActionsRole`), no long-lived AWS credentials are stored in GitHub at any point.
+ 
 ---
 
 ## CloudWatch & Observability
