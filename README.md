@@ -40,7 +40,7 @@ A short walkthrough of the full request lifecycle, from requesting an upload slo
 ## Tech Stack
  
 **Backend:** Python 3.11 (FastAPI, boto3, pypdf) · Python 3.13 (AWS Lambda)
-**Infrastructure:** Terraform · AWS (ECS, ECR, CloudFront, KMS, S3, DynamoDB, Lambda, WAF, APIGW, CloudWatch, SQS, IAM, Bedrock) · Docker 
+**Infrastructure:** Terraform · AWS (ECS, ECR, CloudFront, EC2, KMS, S3, DynamoDB, Lambda, WAF, APIGW, CloudWatch, SQS, IAM, Bedrock) · Docker 
 **Data & Messaging:** DynamoDB · SQS · S3
 **AI:** Amazon Bedrock (Claude 3 Haiku)
 **Security:** IAM (OIDC) · KMS · Lambda Authorizer (HMAC)
