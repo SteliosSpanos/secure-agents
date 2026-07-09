@@ -1,3 +1,13 @@
+/*
+  Terraform Remote State Backend & Provider Configuration
+  
+  Contents:
+  - Remote State Storage: S3 bucket configured for Terraform state tracking, featuring active versioning (90-day noncurrent expiration), strict public access blocks, and a resource policy denying all non-SSL (HTTP) requests.
+  - State Encryption: Dedicated KMS Customer Managed Key (CMK) provisioned specifically to encrypt the Terraform state file at rest, utilizing S3 Bucket Keys.
+  - State Locking: DynamoDB table configured with 'LockID' to safely manage concurrent deployments and prevent state file corruption during CI/CD pipeline runs.
+  - Core Providers: Defines Terraform version constraints, the AWS provider (~> 6.0), and enforces a global 'Project' tag across all deployed resources.
+*/
+
 data "aws_caller_identity" "current" {}
 
 // Backend KMS Key
