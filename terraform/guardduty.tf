@@ -1,5 +1,10 @@
 /*
-    GuardDuty monitors for malicious activity and unauthorized behavior.
+  Amazon GuardDuty Threat Detection
+  
+  Contents:
+  - Core Detector: Enables continuous security monitoring for malicious or unauthorized behavior across the AWS environment.
+  - S3 Protection: Activates S3 Data Events monitoring to detect suspicious object-level API operations and data exfiltration attempts.
+  - Fargate Runtime Monitoring: Enables advanced runtime threat detection specifically for ECS Fargate tasks, utilizing AWS's automated security agent management (while explicitly disabling unused EKS addons).
 */
 
 resource "aws_guardduty_detector" "main" {

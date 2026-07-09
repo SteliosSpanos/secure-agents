@@ -1,13 +1,18 @@
 /*
-    ECS Fargate FastAPI app and AI agent worker:
-    - ECS Cluster with Container Insights enabled for monitoring
-    - API Task Definition with 256 CPU units and 512 MB memory, using the API
-    - Worker Task Definition with 512 CPU units and 1024 MB memory for AI processing
-    - Both tasks use Fargate launch type and are deployed in private subnets
-    - The ALB lives infront of the API service, while the worker service is internal only
-    - Both tasks have IAM roles with least privilege permissions
-    - Both services have logging configured to CloudWatch Logs
-    - Agent worker has auto-scaling configured 
+  ECS Fargate (FastAPI & AI Agent), EC2 Jump Boxes & NAT Instances
+  
+  Contents:
+  - ECS Cluster: Deploys a unified cluster with native Container Insights telemetry enabled.
+  - Fargate Task Definitions: 
+    * FastAPI API: Lightweight configuration (256 CPU / 512 MB) mapping port 8000.
+    * Agent Worker: Robust configuration (512 CPU / 1024 MB) with a 120-second extended stop timeout to maximize graceful worker shutdown during AI processing tasks.
+  - ECS Services:
+    * API Service: Configured with a static desired count of 2, safely tethered behind the private ALB target group.
+    * Worker Service: Lifecycle configured to ignore changes to 'desired_count', allowing external auto-scaling tracking to manage its state dynamically.
+  - Public Compute Infrastructure (Multi-AZ):
+    * EC2 Jump Boxes: Deployed into distinct public subnets utilizing automated user-data scripts for operational transparency, attached to dedicated Elastic IPs.
+    * EC2 NAT Instances: Act as custom NAT gateways running in public subnets with 'source_dest_check' disabled to properly masquerade private routing domain traffic out to the internet.
+  - Storage Security & SSH Automation: Enforces IMDSv2 tokens on all EC2 metadata options, applies gp3 encrypted root block devices secured via custom EBS KMS keys, and drops an automated, localized openSSH routing configuration file inside '.ssh/config'.
 */
 
 // ECS Cluster & Logging

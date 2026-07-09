@@ -1,8 +1,11 @@
 /*
-    Auto scaling for the Fargate worker service based on SQS backlog:
-    - Local variables define the min/max capacity, target value for scaling, and cooldown periods
-    - The custom metric calculates the backlog per task as (visible messages + inflight messages) / number of running tasks
-    - This allows the worker service to automatically scale out when there are more messages waiting than the target threshold
+  Application Auto Scaling (ECS Worker SQS Target Tracking)
+  
+  Contents:
+  - Scaling Bounds: Manages the Fargate worker service capacity, allowing it to scale dynamically between 0 (cost-saving idle state) and 5 maximum concurrent tasks.
+  - Custom Metric Expression: Calculates the true "Backlog per Capacity Unit" using the exact formula `(Visible Messages + In-Flight Messages) / Max(Running Tasks, 1)`. The conditional `IF(m2 > 0, m2, 1)` explicitly prevents division-by-zero errors when the service is scaled to zero.
+  - Target Tracking Policy: Automatically adjusts the ECS 'desired_count' to maintain a target backlog of exactly 5.0 messages per running worker.
+  - Cooldown Tuning: Configured with an aggressive 120-second scale-out cooldown to react rapidly to traffic spikes, and a conservative 300-second scale-in cooldown to prevent premature termination (thrashing) as queues drain.
 */
 
 locals {

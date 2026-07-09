@@ -1,8 +1,18 @@
 /*
-    Configuration of Github Actions Role for executing the pipeline
+  GitHub Actions CI/CD Pipeline Configuration (OIDC Integration)
+  
+  Contents:
+  - OIDC Identity Provider: Establishes a keyless, secure trust relationship between AWS and GitHub Actions using GitHub's TLS thumbprint.
+  - Strict Trust Policy: Restricts the 'sts:AssumeRoleWithWebIdentity' action exclusively to the 'SteliosSpanos/secure-agents' repository and specifically the 'main' branch.
+  - Least-Privilege CI/CD Permissions: 
+    * ECR: Grants scoped access to upload image layers specifically to the 'api' and 'worker' repositories.
+    * ECS: Allows registering new task definitions and updating the designated ECS services.
+    * IAM PassRole: Safely permits passing the API/Worker execution and task roles strictly to 'ecs-tasks.amazonaws.com'.
+    * SSM Parameter Store: Scoped access to read/write deployment variables under the '/agents/*' path.
 */
 
 // Fetch the TLS certificate for Github's OIDC server
+
 data "tls_certificate" "github" {
   url = "https://token.actions.githubusercontent.com"
 }

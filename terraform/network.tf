@@ -1,9 +1,12 @@
 /*
-  Network Architecture:
-  - 1 VPC
-  - 2 private subnets(multi-AZ)
-  - 1 private route table
-  - VPC Endpoints (Interfaces needed for Fargate)
+  Virtual Private Cloud (VPC), Routing & Interface Endpoints
+  
+  Contents:
+  - Core VPC: 1 VPC configured with DNS hostnames and support enabled.
+  - Subnet Architecture (Multi-AZ): 2 Public Subnets (for IGW, Jump Boxes, NATs) and 2 Private Subnets (for compute, databases, ALBs).
+  - Route Tables: Distinct route tables for public routing (to IGW) and private routing (explicitly pointing internet-bound traffic to the respective AZ's NAT Instance network interface).
+  - Interface VPC Endpoints: Deploys private AWS service endpoints (ECR, Logs, SQS, KMS, STS, Bedrock Runtime) directly into the private subnets.
+  - GuardDuty Telemetry Support: Explicitly includes 'ecs-agent' and 'ecs-telemetry' interface endpoints required for GuardDuty Fargate Runtime Monitoring.
 */
 
 // VPC 

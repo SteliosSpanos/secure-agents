@@ -1,26 +1,13 @@
 /*
-  Main SQS Queue:
-  - waits for S3 event notifications when a new PDF is uploaded
-  - has a long polling configuration to reduce costs
-  - has a visibility timeout of 10 minutes to allow for AI processing
-  - is encrypted with a KMS key for security
-  - has a redrive policy to move failed messages to a Dead Letter Queue (DLQ) after 3 attempts
-
-  Dead Letter Queue (DLQ):
-  - stores messages that failed processing in the main queue after 3 attempts
-  - has a retention period of 14 days (max allowed by SQS)
-  - is encrypted with the same KMS key for consistency
-
-  Webhook Queue:
-  - stores messages for webhook (sending results to client)
-  - has similar configuration to the main queue but is used for a different purpose
-  - also has a DLQ for failed webhook messages
-  - There is no policy because the permissions are handled by the roles of the webhook service and the lambda
-
-  Webhook DLQ:
-  - stores messages that failed processing in the webhook queue after 3 attempts
-  - has a retention period of 14 days
-  - is encrypted with the same KMS key
+  SQS Queues, DLQs & Webhook Consumer Pipeline
+  
+  Contents:
+  - Agent Processing Queue: Long-polling SQS queue holding incoming PDF processing tasks. Configured with a 10-minute visibility timeout to accommodate heavy AI workloads, KMS encryption, and a custom resource policy allowing S3 to publish events.
+  - Webhook Delivery Queue: Dedicated queue to manage outgoing webhook payloads.
+  - Dead Letter Queues (DLQs): Secure, encrypted isolation queues with 14-day max retention periods.
+  - Cycle-Free Redrive Logic: Standalone 'redrive_policy' and 'redrive_allow_policy' resources strictly route messages to DLQs after 3 failed processing attempts without causing Terraform circular dependencies.
+  - Webhook Consumer Lambda: Packaged inside a private subnet. Triggered directly by the Webhook SQS queue with batching (up to 10), error isolation (ReportBatchItemFailures), and a strict concurrency limit (5) to prevent overwhelming external client endpoints.
+  - S3 Event Integration: Automates the processing pipeline by triggering an SQS message the exact moment a '.pdf' is uploaded to the main storage bucket.
 */
 
 // Main Dead Letter Queue

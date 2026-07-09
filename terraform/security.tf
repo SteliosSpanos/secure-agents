@@ -1,11 +1,21 @@
 /*
-    Security Groups:
-    - VPC Link (ingress: HTTP from APIGW | egress: ALB)
-    - ALB (ingress: HTTP from VPC Link | egress: Fargate containers)
-    - Fargate API (ingress: HTTP from ALB | egress: HTTPS to VPC Endpoints)
-    - Fargate Workers (egress: HTTPS to VPC Endpoints)
-    - VPC Endpoints (ingress: HTTPS from Fargate API and Workers)
-    - Lambda Authorizer (egress: HTTPS only to DynamoDB Endpoint)
+  Security Groups (SGs)
+  
+  Contents:
+  - API Gateway to Compute Pipeline:
+    * VPC Link SG: Accepts public HTTP (80) and restricts egress strictly to the internal ALB.
+    * ALB SG: Accepts HTTP strictly from the VPC Link and forwards to Fargate tasks on port 8000.
+    * Fargate API SG: Accepts traffic only from the ALB and restricts egress strictly to VPC endpoints via HTTPS.
+  - Internal Compute & Endpoints:
+    * Fargate Worker SG: Highly isolated; no inbound rules, egress strictly to VPC Endpoints.
+    * VPC Endpoints SG: Uses a cycle-free standalone ingress mapping (aws_vpc_security_group_ingress_rule) to allow HTTPS traffic from all internal compute resources (Fargate, Lambdas, Jump Boxes).
+  - Lambda Security:
+    * Authorizer SG: Egress strictly to the DynamoDB Gateway and Interface Endpoints.
+    * Webhook Trigger SG: Egress strictly to DynamoDB and Interface Endpoints.
+    * Webhook Consumer SG: Egress to VPC endpoints, plus 0.0.0.0/0 to allow delivering results to external client webhooks.
+  - EC2 Infrastructure:
+    * Jump Box SG: Restricts SSH (22) and ICMP (ping) strictly to your dynamic local IP address.
+    * NAT Instance SG: Accepts HTTPS strictly from the Webhook Consumer (to proxy webhooks), accepts SSH/ICMP from the Jump Box, and allows standard outbound web traffic (HTTP/HTTPS/DNS) for updates and proxying.
 */
 
 // VPC Link

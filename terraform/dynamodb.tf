@@ -1,10 +1,12 @@
 /*
-  DynamoDB Tables:
-  - API Keys Table: Stores API keys with TTL for expiration and encryption at rest
-  - Jobs Table: Stores job information with a composite primary key (client_id, job_id), TTL for cleanup, and encryption at rest
-  - Both have point-in-time recovery enabled for data protection
-  - A resource policy is attached to both the API Keys table and the Jobs table to restrict access to the VPC endpoint
-  - A VPC endpoint is created for DynamoDB
+  DynamoDB Tables, VPC Endpoints & Stream-Triggered Webhooks
+  
+  Contents:
+  - DynamoDB Gateway VPC Endpoint: Configures private route table paths and endpoints policies for isolated data access within the VPC.
+  - API Keys Table: Uses 'client_id' as the partition key, attaches a specialized GSI ('ApiKeyIndex') for key validation, applies a custom KMS encryption key, enables TTL data-pruning, and enforces a strict VPC-only resource policy.
+  - Jobs Table: Implements a composite primary key ('client_id' and 'job_id') with DynamoDB Streams enabled ('NEW_AND_OLD_IMAGES'), dedicated KMS encryption, PITR protection, and localized network access restrictions via resource policy.
+  - Webhook Trigger Lambda: Packaged via automated zip creation and deployed within private subnets to safely receive stream events.
+  - Event Source Mapping: Hooks directly into the Jobs DynamoDB Stream, processing batches up to 10 records with built-in batch-bisecting error isolation, explicitly filtered to invoke only on 'MODIFY' events transitioning to a 'COMPLETED' status.
 */
 
 // VPC Endpoint for DynamoDB

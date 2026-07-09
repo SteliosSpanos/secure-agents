@@ -1,9 +1,12 @@
 /*
-    API Gateway with VPC link to the ALB and the Lambda:
-    - The VPC Link securely connects API Gateway to the internal ALB.
-    - The Lambda doesnt activate if the headers x-api-key and x-origin-verify are missing, which prevents unnecessary Lambda invocations.
-    - The Lambda Authorizer verifies API keys and a custom origin secret before allowing requests to reach the ALB.
-    - The API Gateway creates the header x-client-id with the client_id returned by the Lambda Authorizer.
+  API Gateway, VPC Link & Custom Lambda Authorizer
+  
+  Contents:
+  - Public HTTP API: Configured with a catch-all "dumb pipe" route, rate limiting, and detailed access logging.
+  - VPC Link & Integration: Securely proxies traffic to the internal ALB and injects the 'x-client-id' header returned by the authorizer.
+  - Lambda Authorizer: Verifies API keys and a custom origin secret. Runs securely inside private subnets and explicitly depends on the main API Keys DynamoDB table.
+  - Identity Sources: API Gateway requires 'x-api-key' and 'x-origin-verify' headers to be present before invoking the Lambda, preventing unnecessary invocations.
+  - Lambda Automation & Permissions: Automatically zips the local Python code for deployment and explicitly grants API Gateway invocation rights.
 */
 
 // VPC Link

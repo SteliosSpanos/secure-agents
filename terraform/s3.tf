@@ -1,13 +1,12 @@
 /*
-  Main S3 Bucket:
-  - Ownership Controls: Enforce bucket owner ownership to disable ACLs.
-  - Server Access Logging: Log access to a separate bucket.
-  - CORS Configuration: Allows specific origins and headers for cross-origin requests
-  - Versioning for data protection
-  - Public Access Block: Restrict public access to the bucket
-  - Lifecycle Configuration
-  - Server-Side Encryption with AWS KMS for encryption at rest
-  - VPC endpoint for private connectivity to S3
+  Main S3 Storage Bucket, Access Logs & VPC Endpoint
+  
+  Contents:
+  - Storage Bucket: Dedicated bucket for processing documents, with strict public access blocks, versioning enabled, and automated server access logging.
+  - Security Controls: Enforces BucketOwner ownership to disable legacy ACLs, applies KMS Server-Side Encryption, and utilizes S3 Bucket Keys to reduce KMS costs.
+  - CORS & Lifecycle: Configured to accept POST requests with custom client metadata headers from trusted origins. Lifecycle rules automatically expire data after 30 days and clean up incomplete multipart uploads.
+  - S3 Access Logs Bucket: Secure bucket utilizing AES-256 encryption with a 90-day retention policy to capture all traffic hitting the main storage bucket.
+  - VPC Gateway Endpoint: Establishes a private connection within the VPC directly to S3. Both the S3 Bucket Policy and Endpoint Policy explicitly restrict traffic to flow exclusively through this internal route.
 */
 
 resource "aws_s3_bucket" "agents" {

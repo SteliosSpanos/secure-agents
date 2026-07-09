@@ -1,5 +1,17 @@
 /*
-    IAM roles and policies for compute and VPC flow logs:
+  Identity and Access Management (IAM) Roles & Profiles
+  
+  Contents:
+  - ECS Compute Roles:
+    * Task Execution Role: Grants the ECS agent permissions to pull ECR images and route logs to CloudWatch.
+    * API Task Role: Grants the FastAPI containers specific application-level permissions (e.g., DynamoDB read/write).
+    * Agent Task Role: Grants AI workers permissions to read SQS, access Bedrock models, and update job statuses.
+  - Lambda Roles (VPC Integrated):
+    * Authorizer, Trigger & Consumer Roles: Configured with standard assume-role policies and explicitly attached to the AWS managed 'AWSLambdaVPCAccessExecutionRole' to allow them to create ENIs and execute inside private subnets.
+  - EC2 Compute Profiles:
+    * Jump Box & NAT Instance Roles: Base EC2 roles wrapped in Instance Profiles to allow secure AWS API interactions (like writing CloudWatch logs) directly from the virtual machines.
+  - Telemetry Roles:
+    * VPC Flow Log Role: Allows the VPC service to assume this role to publish network traffic logs directly to CloudWatch.
 */
 
 // API Role

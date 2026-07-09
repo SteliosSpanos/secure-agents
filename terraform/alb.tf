@@ -1,5 +1,10 @@
 /*
-    Application Load Balancer that lives inside a private subnet
+  Internal Application Load Balancer (ALB) & Logging Infrastructure
+  
+  Contents:
+  - Internal ALB: Routes traffic within private subnets (no public IP).
+  - Listener & Target Group: Listens on HTTP (Port 80) and forwards traffic to backend tasks/IPs on Port 8000, including path-based health checks.
+  - S3 Access Logging: Dedicated secure bucket for ALB logs featuring a 90-day lifecycle expiration, enforced bucket ownership, AES256 default encryption, and strict public access blocks.
 */
 
 resource "aws_lb" "api_lb" {

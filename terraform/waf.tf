@@ -1,10 +1,15 @@
 /*
-    The Web Application Firewall (WAF) is attached in front of Cloudfront:
-    - Global Rate Limit: Blocks IPs that exceed 500 requests in 5 minutes.
-    - Upload Rate Limit: Blocks IPs that exceed 100 requests to /api/v1
-    - AWS Managed Rules: Protects against common threats like SQLi and XSS.
-    - Logging: All WAF events are logged to CloudWatch for monitoring and analysis.
-    - Lives in the global region since Cloudfront is a global service (us-east-1).
+  Web Application Firewall (WAFv2) & Global Threat Protection
+  
+  Contents:
+  - Global Edge Deployment: Provisioned via the global provider (us-east-1) to attach directly to the CloudFront distribution, blocking threats at the AWS edge.
+  - Rate Limiting Defenses:
+    * Global Limit: Mitigates general volumetric DDoS attacks by blocking any individual IP exceeding 500 requests per 5-minute window.
+    * Endpoint Limit: Uses a scoped-down byte match statement to explicitly protect the '/api/v1/request-upload' URI, strictly capping traffic to 100 requests per 5-minute window per IP.
+  - Managed Threat Intelligence:
+    * Common Rule Set: Automatically mitigates broad, common vulnerabilities (including OWASP Top 10, SQLi, and XSS).
+    * Known Bad Inputs Set: Intercepts and blocks requests containing explicitly malformed, invalid, or malicious data patterns.
+  - Observability & Telemetry: Enables CloudWatch metrics and request sampling on the main ACL and every individual rule. Connects a dedicated logging configuration to stream full WAF security events directly to a centralized CloudWatch Log Group.
 */
 
 resource "aws_wafv2_web_acl" "api_waf" {

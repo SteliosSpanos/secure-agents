@@ -1,10 +1,11 @@
 /*
-    The ECR repos:
-    - API Repo and Worker Repo for storing container images
-    - Both repos have lifecycle policies to keep only the last 20 images
-    - Both repos are encrypted with a KMS key for security
-    - Both repos have image scanning on push enabled to detect vulnerabilities early
-    - A null resource is used to automatically push a dummy image to both repos on creation to avoid issues with empty repos
+  Elastic Container Registry (ECR) & Bootstrap Automation
+  
+  Contents:
+  - Repositories: Creates dedicated, force-deletable 'api' and 'worker' image repositories.
+  - Security & Auditing: Enforces immutable image tags, encrypts images at rest using the shared KMS key, and enables 'scan_on_push' to automatically assess vulnerabilities on every deployment.
+  - Lifecycle Policies: Attaches automated cleanup rules to both repositories, retaining only the 20 most recent images to control storage costs.
+  - Bootstrap Automation: Uses 'null_resource' and local 'bash' execution to automatically build and push a lightweight dummy 'alpine' image to both repositories upon creation. This prevents ECS task definition failures that occur when referencing empty repositories during initial deployment.
 */
 
 // ECR API Repo

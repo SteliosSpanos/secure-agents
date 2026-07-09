@@ -1,9 +1,13 @@
 /*
-  KMS Encryption Keys
-  - aws_kms_key.api_keys_table: encrypts agents_APIKeys (auth credentials)
-  - aws_kms_key.jobs_table: encrypts agents_Jobs (client document data)
-  - aws_kms_key.shared: encrypts S3, SQS, Cloudwatch, ECR
-  - aws_kms_key.waf_log_key: encrypts WAF logs that are in us-east-1
+  Key Management Service (KMS) Encryption Keys
+ 
+  Contents:
+  - API Keys Table Key: Encrypts auth credentials stored in the API Keys DynamoDB table.
+  - Jobs Table Key: Encrypts sensitive client document data within the Jobs DynamoDB table.
+  - Shared Key: A versatile key utilized for encrypting S3 buckets, SQS queues, ECR repositories, and standard CloudWatch log groups.
+  - WAF Log Key: Provisioned specifically in the global region (us-east-1) to encrypt global Web Application Firewall (WAF) logs.
+  - EBS Key: Dedicated key to encrypt the Elastic Block Store (EBS) root volumes for the EC2 Jump Boxes and NAT Instances.
+  - Security Standards: All keys are provisioned with automated key rotation enabled, a strict 30-day deletion window, custom least-privilege IAM policies, and friendly aliases.
 */
 
 // API Keys Table Key

@@ -1,15 +1,13 @@
 /*
-    Log Groups, SQS Alarms and Operational Monitoring:
-    - VPC Flow Logs
-    - API Logs
-    - Worker Logs
-    - Lambda Logs
-    - WAF Logs
-    - APIGW Logs
-    - Jump Box & NAT Logs
-    - SNS Alerts: Guarduty Findings, DLQ Alerts, Capacity Alerts
-    - Operational Alarms: API Health, NAT Health, Queue Backlogs
-    - Centralized Dashboard
+  Operational Monitoring, Logging & Alarms Dashboard
+  
+  Contents:
+  - Centralized Logging: Provisions distinct, KMS-encrypted CloudWatch log groups for VPC Flow Logs, ECS Tasks (API & Worker), Lambdas (Authorizer, Trigger, Consumer), WAF, API Gateway, and EC2 Instances (Jump Box & NAT).
+  - Alerting System: Deploys an SNS topic (with email subscription) for security and operational alerts, secured by a custom KMS key.
+  - SQS Alarms: Triggers when messages enter the Agent or Webhook Dead Letter Queues (DLQs), or if a message is stalled in the main queue for > 20 minutes.
+  - Compute & API Alarms: Monitors worker capacity limits, ALB 5XX error rates, high API response latency (> 1s), NAT instance health check failures, and webhook Lambda errors.
+  - Threat Detection: EventBridge rule automatically routes high-severity GuardDuty findings (severity >= 7) directly to the SNS alert topic.
+  - Central Dashboard: Creates a unified CloudWatch dashboard to visualize real-time API traffic, error rates, and queue backlogs.
 */
 
 // VPC Flow Logs
