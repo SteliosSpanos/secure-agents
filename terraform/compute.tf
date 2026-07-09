@@ -267,7 +267,7 @@ resource "aws_instance" "nat_instance" {
   }
 
   user_data = templatefile("${path.module}/templates/userdata.tpl", {
-    private_subnet_1_cidr = aws_subnet.agents_private_subnet_1.cidr_block,
+    private_subnet_cidr   = aws_subnet.agents_private_subnet_1.cidr_block,
     private_subnet_2_cidr = aws_subnet.agents_private_subnet_2.cidr_block,
     log_group_name        = aws_cloudwatch_log_group.nat_instance_logs.name
   })
@@ -284,7 +284,7 @@ resource "aws_eip" "nat_instance" {
   domain   = "vpc"
   instance = each.value.id
 
-  depends_on = [aws_internet_gateway.agents_igw.id]
+  depends_on = [aws_internet_gateway.agents_igw]
 
   tags = {
     Name = "${var.project_name}-nat-instance-eip-${each.key}"

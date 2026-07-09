@@ -111,25 +111,32 @@ resource "aws_security_group" "vpc_endpoints_sg" {
   description = "Allow ECS tasks and Lambdas to communicate with AWS Service Endpoints"
   vpc_id      = aws_vpc.agents_vpc.id
 
-  ingress {
-    description = "HTTPS from Fargate API, Agent and Lambda Authorizer, Webhook Trigger SGs"
-    from_port   = 443
-    to_port     = 443
-    protocol    = "tcp"
-    security_groups = [
-      aws_security_group.fargate_api_sg.id,
-      aws_security_group.fargate_worker_sg.id,
-      aws_security_group.authorizer_sg.id,
-      aws_security_group.webhook_trigger_sg.id,
-      aws_security_group.webhook_consumer_sg.id,
-      aws_security_group.nat_instance.id,
-      aws_security_group.jump_box.id
-    ]
-  }
-
   tags = {
     Name = "${var.project_name}-endpoints-sg"
   }
+}
+
+locals {
+  endpoint_clients = {
+    "fargate-api"      = aws_security_group.fargate_api_sg.id
+    "fargate-worker"   = aws_security_group.fargate_worker_sg.id
+    "authorizer"       = aws_security_group.authorizer_sg.id
+    "webhook-trigger"  = aws_security_group.webhook_trigger_sg.id
+    "webhook-consumer" = aws_security_group.webhook_consumer_sg.id
+    "nat-instance"     = aws_security_group.nat_instance.id
+    "jump-box"         = aws_security_group.jump_box.id
+  }
+}
+
+resource "aws_vpc_security_group_ingress_rule" "vpc_endpoints_ingress" {
+  for_each = local.endpoint_clients
+
+  security_group_id            = aws_security_group.vpc_endpoints_sg.id
+  referenced_security_group_id = each.value
+  from_port                    = 443
+  to_port                      = 443
+  ip_protocol                  = "tcp"
+  description                  = "HTTPS from ${each.key}"
 }
 
 // Lambda Authorizer

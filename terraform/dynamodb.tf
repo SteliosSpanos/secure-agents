@@ -45,6 +45,13 @@ resource "aws_dynamodb_table" "api_keys" {
     type = "S"
   }
 
+  global_secondary_index {
+    name               = "ApiKeyIndex"
+    hash_key           = "api_key"
+    projection_type    = "INCLUDE"
+    non_key_attributes = ["active"]
+  }
+
   server_side_encryption {
     enabled     = true
     kms_key_arn = aws_kms_key.api_keys_table.arn
@@ -62,17 +69,6 @@ resource "aws_dynamodb_table" "api_keys" {
 
   tags = {
     Name = "${var.project_name}-api-keys"
-  }
-}
-
-resource "aws_dynamodb_table_index" "api_keys_index" {
-  table_name = aws_dynamodb_table.api_keys.name
-  name       = "ApiKeyIndex"
-  hash_key   = "api_key"
-
-  projection {
-    projection_type    = "INCLUDE"
-    non_key_attributes = ["active"]
   }
 }
 

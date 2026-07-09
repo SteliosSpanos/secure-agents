@@ -88,7 +88,7 @@ data "aws_iam_policy_document" "github_actions_permissions" {
   }
 
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["iam:PassRole"]
     resources = [
       aws_iam_role.api_task_role.arn,
@@ -96,14 +96,14 @@ data "aws_iam_policy_document" "github_actions_permissions" {
       aws_iam_role.ecs_execution_role.arn
     ]
     condition {
-      test = "StringEquals"
+      test     = "StringEquals"
       variable = "iam:PassedToService"
-      values = ["ecs-tasks.amazonaws.com"]
+      values   = ["ecs-tasks.amazonaws.com"]
     }
   }
 
   statement {
-    effect = "Allow"
+    effect  = "Allow"
     actions = ["ssm:PutParameter", "ssm:GetParameter"]
     resources = [
       "arn:aws:ssm:${var.region}:${data.aws_caller_identity.current.account_id}:parameter/agents/*"

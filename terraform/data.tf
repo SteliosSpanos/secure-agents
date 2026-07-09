@@ -4,6 +4,10 @@ data "aws_availability_zones" "available" {
   state = "available"
 }
 
+data "external" "my_ip" {
+  program = ["bash", "${path.module}/scripts/my_ip_json.sh"]
+}
+
 data "aws_prefix_list" "s3" {
   prefix_list_id = aws_vpc_endpoint.s3.prefix_list_id
 }

@@ -31,11 +31,6 @@ resource "aws_sqs_queue" "agent_dlq" {
   kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
 
-  redrive_allow_policy = jsonencode({
-    redrivePermission = "byQueue",
-    sourceQueueArns   = [aws_sqs_queue.agent_queue.arn]
-  })
-
   tags = {
     Name = "${var.project_name}-dlq"
   }
@@ -54,20 +49,36 @@ resource "aws_sqs_queue" "agent_queue" {
   kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
 
-  // Link to Dead Letter Queue
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.agent_dlq.arn
-    maxReceiveCount     = 3 // if worker failes 3 times move to DLQ
-  })
-
   tags = {
     Name = "${var.project_name}-work-queue"
   }
 }
 
+// Redrive Policy (tell Main Queue to send failures to the DLQ)
+
+resource "aws_sqs_queue_redrive_policy" "agent_queue_redrive" {
+  queue_url = aws_sqs_queue.agent_queue.id
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.agent_dlq.arn
+    maxReceiveCount     = 3
+  })
+}
+
+// Redrive Allow Policy (tell DLQ to only accept messages from the Main Queue)
+
+resource "aws_sqs_queue_redrive_allow_policy" "agent_dlq_allow" {
+  queue_url = aws_sqs_queue.agent_dlq.id
+
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue",
+    sourceQueueArns   = [aws_sqs_queue.agent_queue.arn]
+  })
+}
+
 resource "aws_sqs_queue_policy" "agent_queue_policy" {
   queue_url = aws_sqs_queue.agent_queue.id
-  policy    = data.aws_iam_policy_document.agent_queue_policy.json
+  policy    = data.aws_iam_policy_document.sqs_agent_queue_policy.json
 }
 
 
@@ -80,12 +91,6 @@ resource "aws_sqs_queue" "webhook_dlq" {
   message_retention_seconds         = var.sqs_dlq_retention_days * 86400 // 14 days (max allowed)
   kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
-
-  // Security best practice: only allow the specific source queue to use this DLQ
-  redrive_allow_policy = jsonencode({
-    redrivePermission = "byQueue",
-    sourceQueueArns   = [aws_sqs_queue.webhook_queue.arn]
-  })
 
   tags = {
     Name = "${var.project_name}-webhook-dlq"
@@ -105,19 +110,36 @@ resource "aws_sqs_queue" "webhook_queue" {
   kms_master_key_id                 = aws_kms_key.shared.arn
   kms_data_key_reuse_period_seconds = 300
 
-  redrive_policy = jsonencode({
-    deadLetterTargetArn = aws_sqs_queue.webhook_dlq.arn
-    maxReceiveCount     = 3 // if worker failes 3 times move to DLQ
-  })
-
   tags = {
     Name = "${var.project_name}-webhook-queue"
   }
 }
 
+// Redrive Policy for Webhook Queue 
+
+resource "aws_sqs_queue_redrive_policy" "webhook_queue_redrive" {
+  queue_url = aws_sqs_queue.webhook_queue.id
+
+  redrive_policy = jsonencode({
+    deadLetterTargetArn = aws_sqs_queue.webhook_dlq.arn
+    maxReceiveCount     = 3
+  })
+}
+
+// Redrive Allow Policy for Webhook DLQ 
+
+resource "aws_sqs_queue_redrive_allow_policy" "webhook_dlq_allow" {
+  queue_url = aws_sqs_queue.webhook_dlq.id
+
+  redrive_allow_policy = jsonencode({
+    redrivePermission = "byQueue",
+    sourceQueueArns   = [aws_sqs_queue.webhook_queue.arn]
+  })
+}
+
 resource "aws_sqs_queue_policy" "webhook_queue_policy" {
   queue_url = aws_sqs_queue.webhook_queue.id
-  policy    = data.aws_iam_policy_document.webhook_queue_policy.json
+  policy    = data.aws_iam_policy_document.sqs_webhook_queue_policy.json
 }
 
 

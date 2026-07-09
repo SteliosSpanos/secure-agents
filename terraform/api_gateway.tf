@@ -104,7 +104,7 @@ resource "aws_lambda_function" "authorizer" {
 
   depends_on = [
     aws_cloudwatch_log_group.authorizer_logs,
-    aws_dynamodb_table_index.api_keys_index
+    aws_dynamodb_table.api_keys
   ]
 
   vpc_config {
