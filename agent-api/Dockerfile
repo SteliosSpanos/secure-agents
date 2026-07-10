@@ -1,26 +1,27 @@
 FROM python:3.11-slim as builder
 
-ENV PYTHONUSERBASE=/build/user_base
 WORKDIR /build
+
+RUN python -m venv /opt/venv 
+ENV PATH="/opt/venv/bin:$PATH"
 
 COPY requirements.txt .
 RUN pip install --no-cache-dir --user -r requirements.txt
 
+
 FROM python:3.11-slim
 
-WORKDIR /app
-
 RUN groupadd -r appuser && useradd -m -r -g appuser appuser
-
-USER appuser
 WORKDIR /home/appuser
 
-COPY --from=builder --chown=appuser:appuser /root/.local .local
+COPY --from=builder --chown=appuser:appuser /opt/venv /opt/venv
+
+ENV PATH="/opt/venv/bin:$PATH"
+ENV PYTHONUNBUFFERED=1
 
 COPY --chown=appuser:appuser . .
 
-ENV PATH=/home/appuser/.local/bin:$PATH
-ENV PYTHONUNBUFFERED=1
+USER appuser 
 
 EXPOSE 8000
 
