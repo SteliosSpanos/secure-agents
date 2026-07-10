@@ -1,14 +1,14 @@
 terraform {
   required_version = ">= 1.5, < 2.0"
 
-  /*backend "s3" {
-    bucket         = "agents-terraform-state-487322974754"
-    profile        = "dev"
-    key            = "terraform.tfstate"
-    region         = "eu-central-1"
-    dynamodb_table = "agents-terraform-locks"
-    encrypt        = true
-  }*/
+  backend "s3" {
+    bucket       = "secure-agents-terraform-state-502055890709"
+    profile      = "terraform-admin"
+    key          = "prod/terraform.tfstate"
+    region       = "eu-central-1"
+    use_lockfile = true
+    encrypt      = true
+  }
 
   required_providers {
     aws = {

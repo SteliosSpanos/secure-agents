@@ -8,7 +8,3 @@ output "backend_kms_key_arn" {
   description = "Paste into backend.tf -> kms_key_id"
 }
 
-output "lock_table_name" {
-  value       = aws_dynamodb_table.terraform_locks.name
-  description = "Paste into backend.tf -> dynamodb_table"
-}

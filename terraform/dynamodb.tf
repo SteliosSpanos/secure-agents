@@ -49,9 +49,13 @@ resource "aws_dynamodb_table" "api_keys" {
 
   global_secondary_index {
     name               = "ApiKeyIndex"
-    hash_key           = "api_key"
     projection_type    = "INCLUDE"
     non_key_attributes = ["active"]
+
+    key_schema {
+      attribute_name = "api_key"
+      key_type       = "HASH"
+    }
   }
 
   server_side_encryption {

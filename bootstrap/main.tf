@@ -4,7 +4,6 @@
   Contents:
   - Remote State Storage: S3 bucket configured for Terraform state tracking, featuring active versioning (90-day noncurrent expiration), strict public access blocks, and a resource policy denying all non-SSL (HTTP) requests.
   - State Encryption: Dedicated KMS Customer Managed Key (CMK) provisioned specifically to encrypt the Terraform state file at rest, utilizing S3 Bucket Keys.
-  - State Locking: DynamoDB table configured with 'LockID' to safely manage concurrent deployments and prevent state file corruption during CI/CD pipeline runs.
   - Core Providers: Defines Terraform version constraints, the AWS provider (~> 6.0), and enforces a global 'Project' tag across all deployed resources.
 */
 
@@ -126,23 +125,3 @@ resource "aws_s3_bucket_policy" "terraform_state" {
   policy = data.aws_iam_policy_document.state_force_ssl.json
 }
 
-// DynamoDB Locks Table
-
-resource "aws_dynamodb_table" "terraform_locks" {
-  name         = "${var.project_name}-terraform-locks"
-  billing_mode = "PAY_PER_REQUEST"
-  hash_key     = "LockID"
-
-  attribute {
-    name = "LockID"
-    type = "S"
-  }
-
-  server_side_encryption {
-    enabled = true
-  }
-
-  tags = {
-    Name = "${var.project_name}-terraform-locks"
-  }
-}

@@ -1,3 +1,8 @@
+variable "profile" {
+  type        = string
+  description = "AWS profile"
+}
+
 variable "region" {
   type        = string
   description = "AWS region (must match the main stack region)"

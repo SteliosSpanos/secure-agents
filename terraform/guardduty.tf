@@ -7,6 +7,7 @@
   - Fargate Runtime Monitoring: Enables advanced runtime threat detection specifically for ECS Fargate tasks, utilizing AWS's automated security agent management (while explicitly disabling unused EKS addons).
 */
 
+/*
 resource "aws_guardduty_detector" "main" {
   enable = true
 
@@ -40,3 +41,4 @@ resource "aws_guardduty_detector_feature" "runtime_monitoring" {
     status = "ENABLED"
   }
 }
+*/
