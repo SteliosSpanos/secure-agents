@@ -258,13 +258,13 @@ Deployments are handled by four independent workflow files in `.github/workflows
  
 Each deploy workflow runs lint + tests, builds the Docker image, smoke-tests it locally (a clean import of the app with dummy config, catching broken dependencies or import errors before anything is pushed), pushes the image to ECR, then registers a new ECS task definition revision.
  
-For the worker specifically, that new revision is **run as a real ECS task before the live service is ever pointed at it** — it must stay healthy in the real network and IAM context for 20 seconds, or the deploy stops there and the currently running service is left untouched. Only a task definition revision that has passed this check gets promoted to `agents-worker-service`.
+For the worker specifically, that new revision is **run as a real ECS task before the live service is ever pointed at it**. It must stay healthy in the real network and IAM context for 20 seconds, or the deploy stops there and the currently running service is left untouched. Only a task definition revision that has passed this check gets promoted to `agents-worker-service`.
  
 ### Image Tagging & Rollback
  
-ECR repositories use `IMMUTABLE` tags — once an image is pushed under a tag (the git commit SHA), that tag can never be repointed to different content, closing off a class of supply-chain attack where a tag is silently swapped after deployment. Because tags can't move, "what's currently live and known-good" is tracked separately: each successful deploy writes its SHA to an SSM Parameter (`/agents/api/last-stable-sha`, `/agents/worker/last-stable-sha`).
+ECR repositories use `IMMUTABLE` tags. Once an image is pushed under a tag (the git commit SHA), that tag can never be repointed to different content, closing off a class of supply-chain attack where a tag is silently swapped after deployment. Because tags can't move, "what's currently live and known-good" is tracked separately: each successful deploy writes its SHA to an SSM Parameter (`/agents/api/last-stable-sha`, `/agents/worker/last-stable-sha`).
  
-To roll back, run the **Rollback** workflow manually from the Actions tab, choose `api` or `worker`, and optionally provide a specific SHA — leaving it blank rolls back to whatever SHA is currently recorded in SSM.
+To roll back, run the **Rollback** workflow manually from the Actions tab, choose `api` or `worker`, and optionally provide a specific SHA. Leaving it blank rolls back to whatever SHA is currently recorded in SSM.
  
 ### Authentication
  
