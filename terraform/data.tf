@@ -560,8 +560,11 @@ data "aws_iam_policy_document" "jobs_table_policy" {
       type        = "AWS"
       identifiers = ["*"]
     }
-    actions   = ["dynamodb:*"]
-    resources = [aws_dynamodb_table.jobs.arn]
+    actions = ["dynamodb:*"]
+    resources = [
+      aws_dynamodb_table.jobs.arn,
+      "${aws_dynamodb_table.jobs.arn}/*"
+    ]
 
     condition {
       test     = "StringNotEquals"
@@ -598,8 +601,11 @@ data "aws_iam_policy_document" "api_keys_table_policy" {
       type        = "AWS"
       identifiers = ["*"]
     }
-    actions   = ["dynamodb:*"]
-    resources = [aws_dynamodb_table.api_keys.arn]
+    actions = ["dynamodb:*"]
+    resources = [
+      aws_dynamodb_table.api_keys.arn,
+      "${aws_dynamodb_table.api_keys.arn}/*"
+    ]
     condition {
       test     = "StringNotEquals"
       variable = "aws:SourceVpce"
@@ -635,11 +641,14 @@ data "aws_iam_policy_document" "dynamodb_endpoint_policy" {
     actions = [
       "dynamodb:GetItem",
       "dynamodb:PutItem",
-      "dynamodb:UpdateItem"
+      "dynamodb:UpdateItem",
+      "dynamodb:Query" // Allows the Authorizer to search the table
     ]
     resources = [
       aws_dynamodb_table.jobs.arn,
-      aws_dynamodb_table.api_keys.arn
+      "${aws_dynamodb_table.jobs.arn}/*",
+      aws_dynamodb_table.api_keys.arn,
+      "${aws_dynamodb_table.api_keys.arn}/*"
     ]
     condition {
       test     = "StringEquals"

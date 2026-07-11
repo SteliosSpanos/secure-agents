@@ -83,8 +83,11 @@ variable "log_retention_days" {
 }
 
 variable "allowed_origins" {
-  type        = string
-  default     = "http://localhost:3000"
+  type = list(string)
+  default = [
+    "http://localhost:3000",
+    "https://d90xnc0ve8xm0.cloudfront.net"
+  ]
   description = "Allowed origins for CORS"
 }
 

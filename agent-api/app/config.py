@@ -16,9 +16,9 @@ class Settings(BaseSettings):
     # App Settings
     MAX_FILE_SIZE_MB: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
 
-    # Pydantic will automatically turn a comma-separated string from ECS into a list
-    ALLOWED_ORIGINS: List[str] = Field(
-        default=["http://localhost:3000"], alias="ALLOWED_ORIGINS"
+    ALLOWED_ORIGINS: list[str] = Field(
+        default=["http://localhost:3000", "https://d90xnc0ve8xm0.cloudfront.net"],
+        alias="ALLOWED_ORIGINS",
     )
 
     model_config = SettingsConfigDict(
