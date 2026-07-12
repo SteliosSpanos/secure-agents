@@ -17,7 +17,8 @@ resource "aws_vpc_endpoint" "dynamodb" {
   vpc_endpoint_type = "Gateway"
   route_table_ids = [
     aws_route_table.agents_private_rt_1.id,
-    aws_route_table.agents_private_rt_2.id
+    aws_route_table.agents_private_rt_2.id,
+    aws_route_table.agents_public_rt.id
   ]
 
   tags = {
@@ -63,7 +64,6 @@ resource "aws_dynamodb_table" "api_keys" {
     kms_key_arn = aws_kms_key.api_keys_table.arn
   }
 
-  // we can recover any data from any time
   point_in_time_recovery {
     enabled = true
   }
