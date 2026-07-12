@@ -105,10 +105,7 @@ resource "aws_lambda_function" "authorizer" {
   timeout          = 15
   memory_size      = 256
 
-  depends_on = [
-    aws_cloudwatch_log_group.authorizer_logs,
-    aws_dynamodb_table.api_keys
-  ]
+  depends_on = [aws_cloudwatch_log_group.authorizer_logs]
 
   vpc_config {
     subnet_ids = [
@@ -146,5 +143,5 @@ resource "aws_lambda_permission" "api_gw" {
   action        = "lambda:InvokeFunction"
   function_name = aws_lambda_function.authorizer.function_name
   principal     = "apigateway.amazonaws.com"
-  source_arn    = "${aws_apigatewayv2_api.fastapi_gateway.execution_arn}/*/*"
+  source_arn    = "${aws_apigatewayv2_api.fastapi_gateway.execution_arn}/authorizers/${aws_apigatewayv2_authorizer.lambda_auth.id}"
 }
