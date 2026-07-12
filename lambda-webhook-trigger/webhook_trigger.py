@@ -25,7 +25,6 @@ def lambda_handler(event, context):
     records_processed = 0
     for record in event.get("Records", []):
         try:
-            # We only care about record updates (MODIFY)
             if record.get("eventName") != "MODIFY":
                 continue
 

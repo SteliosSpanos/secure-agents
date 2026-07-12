@@ -9,7 +9,6 @@ from . import aws_client
 from .config import settings
 from .schemas import UploadResponse, JobStatusResponse
 
-# Setting up the logging config
 
 logging.basicConfig(
     level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
@@ -17,15 +16,12 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# FastAPI app
-
 app = FastAPI(
     title="Secure AI Agents API",
     description="Zero-trust Document Processing Pipeline",
     version="1.0.1",
 )
 
-# Explicity define who can call your API
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,9 +49,6 @@ def get_client_id(x_client_id: str = Header(None, alias="x-client-id")) -> str:
     return x_client_id
 
 
-# Routes
-
-
 @app.get("/health")
 def health_check():
     return {"status": "healthy"}
@@ -73,13 +66,11 @@ def request_upload(
     job_id = str(uuid.uuid4())
     logger.info(f"Generating secure upload slot for client {client_id}, job {job_id}")
 
-    # Step 1 - Validate filename and generate S3 object key
     try:
         object_key = aws_client.build_object_key(client_id, job_id, filename)
     except aws_client.UserInputError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
-    # Step 2 - Persist the job record before generating the presigned URL to ensure we don't create upload slots for invalid jobs.
     try:
         aws_client.init_job_record(client_id, job_id, object_key)
     except aws_client.AWSDatabaseError:
@@ -88,7 +79,6 @@ def request_upload(
             detail="Could not initialize job record.",
         )
 
-    # Step 3 - Generate the presigned URL for secure upload
     try:
         upload_data = aws_client.generate_presigned_upload(client_id, job_id, filename)
     except aws_client.UserInputError as e:

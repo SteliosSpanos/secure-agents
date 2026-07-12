@@ -1,10 +1,3 @@
-# Lambda function that is attached to the API Gateway and handles authorization.
-# Every lambda has the (event, context) signature:
-# 1. event -> dictionary that contains data sent by the service that triggered it
-# (It's different depending on the trigger)
-# 2. context -> object that contains metadata about the physical execution
-
-
 import os
 import hashlib
 import boto3
@@ -20,14 +13,13 @@ logger.setLevel(logging.INFO)
 aws_config = Config(
     retries={"max_attempts": 3, "mode": "standard"},
     connect_timeout=2,
-    read_timeout=10,  # Don't hang API Gateway waiting for a slow DB
+    read_timeout=10,
 )
 
 
-# Handling Database and TCP connections outside of the handler for reduced latency of cold starts
 dynamodb = boto3.resource("dynamodb", config=aws_config)
 
-TABLE_NAME = os.environ.get("API_KEYS_TABLE")  # From terraform
+TABLE_NAME = os.environ.get("API_KEYS_TABLE")
 EXPECTED_ORIGIN_SECRET = os.environ.get("ORIGIN_SECRET")
 if not TABLE_NAME or not EXPECTED_ORIGIN_SECRET:
     raise RuntimeError("Critical environment variables are missing.")

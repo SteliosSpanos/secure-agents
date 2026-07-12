@@ -30,7 +30,6 @@ api_keys_table = dynamodb.Table(API_KEYS_TABLE_NAME)
 jobs_table = dynamodb.Table(JOBS_TABLE_NAME)
 
 
-# Whethe Lambda finishes or crashes AWS deletes and changes the visibilty of messages automaticallyn
 def lambda_handler(event, context):
     """
     Processes SQS messages containing job completion info.
@@ -41,7 +40,6 @@ def lambda_handler(event, context):
     for record in event.get("Records", []):
         message_id = record.get("messageId")
         try:
-            # Parse SQS message
             message_body = json.loads(record.get("body", "{}"))
             client_id = message_body.get("client_id")
             job_id = message_body.get("job_id")

@@ -30,7 +30,6 @@ def generate_client_key(client_name: str, webhook_url: str = None) -> dict:
 
     item = {"api_key": hashed_key, "client_id": client_name, "active": True}
 
-    # Only generate a webhook secret if they provided a webhook URL
     raw_webhook_secret = None
     if webhook_url:
         item["webhook_url"] = webhook_url
@@ -102,7 +101,6 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="SecureAgents API Key Manager")
 
-    # Use a group for the action
     action_group = parser.add_mutually_exclusive_group(required=True)
     action_group.add_argument(
         "--generate", action="store_true", help="Generate a new API key"
@@ -111,7 +109,6 @@ if __name__ == "__main__":
         "--deactivate", action="store_true", help="Deactivate an existing key"
     )
 
-    # Options
     parser.add_argument(
         "--client-id", type=str, help="Client ID (required for --generate)"
     )

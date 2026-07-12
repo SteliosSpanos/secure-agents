@@ -8,14 +8,10 @@ from botocore.exceptions import ClientError, BotoCoreError
 from typing import Optional, Dict
 from .config import settings
 
-# Setting up logging for module
 
 logger = logging.getLogger(__name__)
 logger.addHandler(logging.NullHandler())
 
-
-# Initialize AWS clients
-# Locally it uses ~/.aws/credentials
 
 aws_config = Config(
     region_name=settings.AWS_REGION,
@@ -23,9 +19,6 @@ aws_config = Config(
     connect_timeout=5,
     read_timeout=15,
 )
-
-
-# Custom Exceptions so FastAPI knows exactly what failed
 
 
 class AWSDatabaseError(Exception):
@@ -40,8 +33,6 @@ class UserInputError(Exception):
     pass
 
 
-# Initializing a session
-
 try:
     session = boto3.Session()
     s3_client = session.client("s3", config=aws_config)
@@ -50,9 +41,6 @@ try:
 except Exception:
     logger.exception("Failed to initialize AWS Session.")
     raise RuntimeError("AWS Client initialization failed. Check credentials/IAM roles.")
-
-
-# Service functions
 
 
 def build_object_key(client_id: str, job_id: str, filename: str) -> str:
@@ -138,7 +126,6 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
 def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
     """Logs the job as PENDING to ensure auditability before upload starts"""
 
-    # The TTL is set to 24 hours from now if it's garbage
     expiration = int(time.time()) + (24 * 60 * 60)
 
     try:

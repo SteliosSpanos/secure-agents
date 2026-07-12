@@ -25,7 +25,7 @@ aws_config = Config(
     region_name=settings.AWS_REGION,
     retries={"max_attempts": 3, "mode": "standard"},
     connect_timeout=5,  # If we cant establish a TCP connection in 5 sec, throw an error
-    read_timeout=300,  # The amount of time the SDK will wait for a response before timing out.
+    read_timeout=300,  # The amount of time the SDK will wait for a response before timing out
     # Must be > SQS WaitTimeSeconds and accommodate Bedrock
 )
 
@@ -40,8 +40,6 @@ except Exception:
     logger.exception("Failed to initialize AWS session.")
     sys.exit(1)
 
-
-# SIGTERM handler is called by ECS before it terminates the Fargate task during scaling, deployment...
 
 shutdown_flag = False
 active_job = {"client_id": None, "job_id": None, "receipt_handle": None}
@@ -99,7 +97,6 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     """Downloads PDF from S3 into a temporary file and extracts text to prevent OOM errors"""
     decoded_key = unquote_plus(key)
 
-    # Check object size before committing to a download
     try:
         head = s3.head_object(Bucket=bucket, Key=decoded_key)
         content_length = head.get("ContentLength", 0)
@@ -113,7 +110,6 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
 
     logger.info(f"Downloading s3://{bucket}/{decoded_key}")
 
-    # Use a temporary file to avoid holding the entire PDF in memory
     tmp_file_path = None
     try:
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
@@ -154,9 +150,7 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
         raise ValueError("Could not parse PDF")
     finally:
         if tmp_file_path and os.path.exists(tmp_file_path):
-            os.remove(
-                tmp_file_path
-            )  # Always cleans up the file, even if an exception occurs
+            os.remove(tmp_file_path)
 
 
 def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, bool]:
@@ -297,7 +291,6 @@ def main():
                         bucket = record["s3"]["bucket"]["name"]
                         key = record["s3"]["object"]["key"]
 
-                        # Extract Client ID and Job ID: {client_id}/uploads/{job_id}/{filename}.pdf
                         decoded_key = unquote_plus(key)
                         parts = decoded_key.split("/")
                         if len(parts) >= 3:

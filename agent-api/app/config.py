@@ -4,15 +4,12 @@ from pydantic import Field
 
 
 class Settings(BaseSettings):
-    # AWS Config
     AWS_REGION: str = Field(default="eu-central-1", alias="AWS_REGION")
     S3_BUCKET_NAME: str = Field(..., alias="S3_BUCKET_NAME")
     JOBS_TABLE_NAME: str = Field(..., alias="DYNAMODB_JOBS_TABLE")
 
-    # Security
     KMS_KEY_ARN: str = Field(..., alias="KMS_KEY_ARN")
 
-    # App Settings
     MAX_FILE_SIZE_MB: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
 
     ALLOWED_ORIGINS: list[str] = Field(
@@ -30,5 +27,4 @@ def get_settings() -> Settings:
     return Settings()
 
 
-# Export a global instance for easy import
 settings = get_settings()
