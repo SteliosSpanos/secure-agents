@@ -1,20 +1,20 @@
-/*
-  Application Auto Scaling (ECS Worker SQS Target Tracking)
-  
+/* 
+  Application Auto Scaling (High-Resolution Multi-Step Scaling)
+
   Contents:
-  - Scaling Bounds: Manages the Fargate worker service capacity, allowing it to scale dynamically between 0 (cost-saving idle state) and 5 maximum concurrent tasks.
-  - Custom Metric Expression: Calculates the true "Backlog per Capacity Unit" using the exact formula `(Visible Messages + In-Flight Messages) / Max(Running Tasks, 1)`. The conditional `IF(m2 > 0, m2, 1)` explicitly prevents division-by-zero errors when the service is scaled to zero.
-  - Target Tracking Policy: Automatically adjusts the ECS 'desired_count' to maintain a target backlog of exactly 5.0 messages per running worker.
-  - Cooldown Tuning: Configured with an aggressive 120-second scale-out cooldown to react rapidly to traffic spikes, and a conservative 300-second scale-in cooldown to prevent premature termination (thrashing) as queues drain.
+  - Scaling Bounds: Manages the Fargate worker capacity (0 to 5 tasks).
+  - Multi-Step Scale-Up Policy: Dynamically provisions capacity based on the volume of traffic spikes. 
+    Cooldown is tuned to Fargate's real cold-start time (not lower), so the policy doesn't re-evaluate and over-provision before
+    the first new task has actually started consuming messages.
+  - Linear Scale-Down Policy: Gracefully scales down 1 task at a time to drain trailing data.
 */
 
 locals {
-  worker_min_capacity    = 0
-  worker_max_capacity    = 5
-  scale_target_value     = 5.0
-  scale_out_cooldown_sec = 120
-  scale_in_cooldown_sec  = 300
+  worker_min_capacity = 0
+  worker_max_capacity = 5
 }
+
+// Scalable Target 
 
 resource "aws_appautoscaling_target" "worker_target" {
   max_capacity       = local.worker_max_capacity
@@ -24,79 +24,59 @@ resource "aws_appautoscaling_target" "worker_target" {
   service_namespace  = "ecs"
 }
 
-resource "aws_appautoscaling_policy" "sqs_target_tracking" {
-  name               = "${var.project_name}-worker-sqs-scaling"
-  policy_type        = "TargetTrackingScaling"
+// Multi-Step Scale-Up Policy 
+
+resource "aws_appautoscaling_policy" "worker_scale_up" {
+  name               = "${var.project_name}-worker-scale-up"
+  policy_type        = "StepScaling"
   resource_id        = aws_appautoscaling_target.worker_target.resource_id
   scalable_dimension = aws_appautoscaling_target.worker_target.scalable_dimension
   service_namespace  = aws_appautoscaling_target.worker_target.service_namespace
 
-  target_tracking_scaling_policy_configuration {
-    target_value       = local.scale_target_value # Scale out if there are more than this # of messages per running task
-    scale_out_cooldown = local.scale_out_cooldown_sec
-    scale_in_cooldown  = local.scale_in_cooldown_sec
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 90
+    metric_aggregation_type = "Maximum"
 
-    customized_metric_specification {
-      metrics {
-        id          = "backlog_per_task"
-        expression  = "(m1_visible + m1_inflight) / IF(m2 > 0, m2, 1)"
-        label       = "SQS Backlog per Capacity Unit"
-        return_data = true
-      }
-      // Variable m1_visible: messaged waiting to be picked up
-      metrics {
-        id          = "m1_visible"
-        return_data = false
-        metric_stat {
-          metric {
-            namespace   = "AWS/SQS"
-            metric_name = "ApproximateNumberOfMessagesVisible" # The standard way SQS metric for how many messages are waiting
-            dimensions {
-              name  = "QueueName"
-              value = aws_sqs_queue.agent_queue.name
-            }
-          }
-          stat = "Average"
-        }
-      }
+    // Light load (1 to 11 messages), i.e 0-10 above the alarm threshold -> Add 1 worker task 
+    step_adjustment {
+      metric_interval_lower_bound = 0
+      metric_interval_upper_bound = 10
+      scaling_adjustment          = 1
+    }
 
-      // Variable m1_inflight: messages already picked up by worker but not yet deleted
-      metrics {
-        id          = "m1_inflight"
-        return_data = false
-        metric_stat {
-          metric {
-            namespace   = "AWS/SQS"
-            metric_name = "ApproximateNumberOfMessagesNotVisible"
-            dimensions {
-              name  = "QueueName"
-              value = aws_sqs_queue.agent_queue.name
-            }
-          }
-          stat = "Average"
-        }
-      }
+    // Moderate spike (11 to 51 messages) -> Add 3 worker tasks immediately
+    step_adjustment {
+      metric_interval_lower_bound = 10
+      metric_interval_upper_bound = 50
+      scaling_adjustment          = 3
+    }
 
-      // Variable m2: ECS running tasks
-      metrics {
-        id          = "m2"
-        return_data = false
-        metric_stat {
-          metric {
-            namespace   = "AWS/ECS"
-            metric_name = "RunningTaskCount"
-            dimensions {
-              name  = "ClusterName"
-              value = aws_ecs_cluster.agents_cluster.name
-            }
-            dimensions {
-              name  = "ServiceName"
-              value = aws_ecs_service.worker_service.name
-            }
-          }
-          stat = "Average"
-        }
-      }
+    // Mass flood (51+ messages) -> Immediately spin up max capacity (5 tasks)
+    step_adjustment {
+      metric_interval_lower_bound = 50
+      scaling_adjustment          = 5
+    }
+  }
+}
+
+// Scale-Down Policy 
+
+resource "aws_appautoscaling_policy" "worker_scale_down" {
+  name               = "${var.project_name}-worker-scale-down"
+  policy_type        = "StepScaling"
+  resource_id        = aws_appautoscaling_target.worker_target.resource_id
+  scalable_dimension = aws_appautoscaling_target.worker_target.scalable_dimension
+  service_namespace  = aws_appautoscaling_target.worker_target.service_namespace
+
+  step_scaling_policy_configuration {
+    adjustment_type         = "ChangeInCapacity"
+    cooldown                = 120
+    metric_aggregation_type = "Maximum"
+
+    step_adjustment {
+      metric_interval_upper_bound = 0
+      scaling_adjustment          = -1
     }
   }
 }
