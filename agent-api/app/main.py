@@ -115,3 +115,6 @@ def get_job_status(job_id: UUID, client_id: str = Depends(get_client_id)):
         )
 
     return status_info
+
+
+# Trigger deployment
