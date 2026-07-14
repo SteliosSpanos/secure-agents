@@ -4,7 +4,7 @@
   Contents:
   - Centralized Logging: Provisions distinct, KMS-encrypted CloudWatch log groups for VPC Flow Logs, ECS Tasks (API & Worker), Lambdas (Authorizer, Trigger, Consumer), WAF, API Gateway, and EC2 Instances (Jump Box & NAT).
   - Alerting System: Deploys an SNS topic (with email subscription) for security and operational alerts, secured by a custom KMS key.
-  - SQS Alarms: Triggers when messages enter the Agent or Webhook Dead Letter Queues (DLQs), or if a message is stalled in the main queue for > 20 minutes.
+  - High-Resolution Alarms: Rapid SQS queue checks to completely eliminate cold delays.
   - Compute & API Alarms: Monitors worker capacity limits, ALB 5XX error rates, high API response latency (> 1s), NAT instance health check failures, and webhook Lambda errors.
   - Threat Detection: EventBridge rule automatically routes high-severity GuardDuty findings (severity >= 7) directly to the SNS alert topic.
   - Central Dashboard: Creates a unified CloudWatch dashboard to visualize real-time API traffic, error rates, and queue backlogs.
@@ -24,7 +24,7 @@ resource "aws_cloudwatch_log_group" "vpc_flow_logs" {
 
 resource "aws_flow_log" "agents_vpc_flow_log" {
   vpc_id               = aws_vpc.agents_vpc.id
-  traffic_type         = "ALL"
+  traffic_type         = "REJECT" // Only the packets that have been blocked (for cost-optimization)
   iam_role_arn         = aws_iam_role.vpc_flow_log.arn
   log_destination      = aws_cloudwatch_log_group.vpc_flow_logs.arn
   log_destination_type = "cloud-watch-logs"
@@ -173,7 +173,81 @@ resource "aws_sns_topic_policy" "alerts_policy" {
 
 
 
+// Scale-Up Trigger 
 
+resource "aws_cloudwatch_metric_alarm" "queue_not_empty" {
+  alarm_name          = "${var.project_name}-queue-not-empty"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 60
+  statistic           = "Maximum"
+  threshold           = 1
+  alarm_description   = "Instantly trigger multi-step scale up when a taks enters the queue"
+
+  // If SQS is silent, assume there are no messages, so don't scale up
+  treat_missing_data = "notBreaching"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.agent_queue.name
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.worker_scale_up.arn]
+}
+
+// Scale-Down Trigger 
+// Uses a composite metric (visible + in-flight messages) rather than just ApproximateNumberOfMessagesVisible.
+// A worker processing a message holds it as 'in-flight', not visible, so checking visible count alone would treat that worker as
+// idle and start terminating it.
+
+resource "aws_cloudwatch_metric_alarm" "queue_empty" {
+  alarm_name          = "${var.project_name}-queue-empty"
+  comparison_operator = "LessThanThreshold"
+  evaluation_periods  = 3
+  threshold           = 1
+  alarm_description   = "Drives scaling down to zero tasks when queue is empty"
+
+  // If SQS is silent, it implies the queue is empty, so trigger the alarm
+  treat_missing_data = "breaching"
+
+  metric_query {
+    id          = "visible"
+    return_data = false
+    metric {
+      metric_name = "ApproximateNumberOfMessagesVisible"
+      namespace   = "AWS/SQS"
+      period      = 60
+      stat        = "Maximum"
+      dimensions = {
+        QueueName = aws_sqs_queue.agent_queue.name
+      }
+    }
+  }
+
+  metric_query {
+    id          = "inflight"
+    return_data = false
+    metric {
+      metric_name = "ApproximateNumberOfMessagesNotVisible"
+      namespace   = "AWS/SQS"
+      period      = 60
+      stat        = "Maximum"
+      dimensions = {
+        QueueName = aws_sqs_queue.agent_queue.name
+      }
+    }
+  }
+
+  metric_query {
+    id          = "total"
+    expression  = "visible + inflight"
+    label       = "Total Messages (Visible + In-Flight)"
+    return_data = true
+  }
+
+  alarm_actions = [aws_appautoscaling_policy.worker_scale_down.arn]
+}
 
 // Agent DLQ Alarm
 
