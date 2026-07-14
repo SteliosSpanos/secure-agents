@@ -80,7 +80,7 @@ def request_upload(
         )
 
     try:
-        upload_data = aws_client.generate_presigned_upload(client_id, job_id, filename)
+        upload_data = aws_client.generate_presigned_upload(client_id, job_id, object_key)
     except aws_client.UserInputError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
     except (aws_client.AWSDatabaseError, aws_client.AWSStorageError):
