@@ -172,7 +172,7 @@ def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, b
 
     extend_sqs_visibility(receipt_handle)
 
-    logger.info("Text extracted. Invoking Bedrock Llama 3...")
+    logger.info("Text extracted. Invoking Agent...")
 
     system_prompt = [
         {
