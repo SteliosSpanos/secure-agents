@@ -753,10 +753,16 @@ data "aws_iam_policy_document" "agent_iam_policy" {
   }
 
   statement {
-    sid       = "BedrockAccess"
-    effect    = "Allow"
-    actions   = ["bedrock:InvokeModel"]
-    resources = ["arn:aws:bedrock:${var.region}::foundation-model/${var.bedrock_model_id}"]
+    sid    = "BedrockAccess"
+    effect = "Allow"
+    actions = [
+      "bedrock:InvokeModel",
+      "bedrock:InvokeModelWithResponseStream"
+    ]
+    resources = [
+      "arn:aws:bedrock:${var.region}::foundation-model/*anthropic.claude-3-haiku*",
+      "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/*anthropic.claude-3-haiku*"
+    ]
   }
 
   statement {
