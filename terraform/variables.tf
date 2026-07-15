@@ -66,7 +66,7 @@ variable "sqs_dlq_retention_days" {
 
 variable "bedrock_model_id" {
   type        = string
-  default     = "anthropic.claude-3-haiku-20240307-v1:0"
+  default     = "eu.anthropic.claude-3-haiku-20240307-v1:0"
   description = "Bedrock foundation model ID"
 }
 
