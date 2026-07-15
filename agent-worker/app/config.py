@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     JOBS_TABLE_NAME: str = Field(..., alias="DYNAMODB_JOBS_TABLE")
 
     BEDROCK_MODEL_ID: str = Field(
-        default="anthropic.claude-3-haiku-20240307-v1:0",
+        default="eu.anthropic.claude-3-haiku-20240307-v1:0",
         alias="BEDROCK_MODEL_ID",
     )
 
