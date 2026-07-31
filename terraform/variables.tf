@@ -85,10 +85,9 @@ variable "log_retention_days" {
 variable "allowed_origins" {
   type = list(string)
   default = [
-    "http://localhost:3000",
     "https://d90xnc0ve8xm0.cloudfront.net"
   ]
-  description = "Allowed origins for CORS"
+  description = "Allowed origins for CORS. Local development must override this explicitly (e.g. via terraform.tfvars) to include http://localhost:3000 - it is not a shipped default. Also drives the S3 bucket CORS rule at s3.tf:57, not just the API's ALLOWED_ORIGINS env var."
 }
 
 variable "public_key_path" {
@@ -107,4 +106,15 @@ variable "instance_types" {
     nat_instance = "t3.micro"
   }
   description = "EC2 instance types for each instance"
+}
+
+variable "admin_principal_arns" {
+  type        = list(string)
+  default     = []
+  description = "Stable IAM user/role ARNs exempted from the DynamoDB VPC-endpoint-restriction Deny (the 'prevent lockout' escape hatch)"
+
+  validation {
+    condition     = alltrue([for a in var.admin_principal_arns : startswith(a, "arn:aws:iam::")])
+    error_message = "admin_principal_arns must contain only stable arn:aws:iam:: user/role ARNs, not arn:aws:sts:: assumed-role session ARNs."
+  }
 }
