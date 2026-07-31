@@ -128,4 +128,10 @@ resource "aws_wafv2_web_acl_logging_configuration" "waf_logging" {
   provider                = aws.global
   log_destination_configs = [aws_cloudwatch_log_group.waf_logs.arn]
   resource_arn            = aws_wafv2_web_acl.api_waf.arn
+
+  redacted_fields {
+    single_header {
+      name = "x-api-key"
+    }
+  }
 }
