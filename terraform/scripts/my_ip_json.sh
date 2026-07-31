@@ -5,15 +5,15 @@ ip=""
 
 ip=$(curl -s --connect-timeout 5 https://api.ipify.org 2>/dev/null)
 
-if [ -z "$ip" ] || [ ${#ip} -lt 7]; then
+if [ -z "$ip" ] || [ ${#ip} -lt 7 ]; then
     ip=$(curl -s --connect-timeout 5 https://icanhazip.com 2>/dev/null | tr -d '\n')
 fi
 
-if [ -z "$ip" ] || [ ${#ip} -lt 7]; then
+if [ -z "$ip" ] || [ ${#ip} -lt 7 ]; then
     ip=$(curl -s --connect-timeout 5 https://ifconfig.me 2>/dev/null)
 fi
 
-if [ -z "$ip" ] || [ ${#ip} -lt 7]; then
+if [ -z "$ip" ] || [ ${#ip} -lt 7 ]; then
     echo "{\"error\":\"Failed to fetch IP address from all services\"}" >&2
 fi
 
