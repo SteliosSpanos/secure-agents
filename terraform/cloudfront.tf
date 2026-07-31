@@ -9,6 +9,8 @@
   - Access Logging: Captures all request/response logs in a dedicated S3 bucket with 90-day retention, AES256 encryption, and strict public access blocks.
 */
 
+// Rotate manually with `terraform apply -replace=random_password.origin_secret`
+// see the "Rotating the CloudFront origin secret" runbook in README.md.
 resource "random_password" "origin_secret" {
   length  = 32
   special = true
