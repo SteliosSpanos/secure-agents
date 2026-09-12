@@ -6,7 +6,7 @@
   - Alerting System: Deploys an SNS topic (with email subscription) for security and operational alerts, secured by a custom KMS key.
   - High-Resolution Alarms: Rapid SQS queue checks to completely eliminate cold delays.
   - Compute & API Alarms: Monitors worker capacity limits, ALB 5XX error rates, high API response latency (> 1s), NAT instance health check failures, and webhook Lambda errors.
-  - Threat Detection: EventBridge rule automatically routes high-severity GuardDuty findings (severity >= 7) directly to the SNS alert topic.
+  - Threat Detection: A log metric filter/alarm on the Lambda Authorizer's logs fires when a request bypasses CloudFront/WAF (missing or invalid X-Origin-Verify header).
   - Central Dashboard: Creates a unified CloudWatch dashboard to visualize real-time API traffic, error rates, and queue backlogs.
 */
 
@@ -68,6 +68,35 @@ resource "aws_cloudwatch_log_group" "authorizer_logs" {
   tags = {
     Name = "${var.project_name}-authorizer-logs"
   }
+}
+
+// Detects requests that reached the authorizer without a valid X-Origin-Verify
+resource "aws_cloudwatch_log_metric_filter" "authorizer_bypass" {
+  name           = "${var.project_name}-authorizer-bypass"
+  log_group_name = aws_cloudwatch_log_group.authorizer_logs.name
+  pattern        = "\"SECURITY ALERT: Request bypassed CloudFront/WAF\""
+
+  metric_transformation {
+    name      = "AuthorizerCloudFrontBypass"
+    namespace = "${var.project_name}/Security"
+    value     = "1"
+    unit      = "Count"
+  }
+}
+
+resource "aws_cloudwatch_metric_alarm" "authorizer_bypass" {
+  alarm_name          = "${var.project_name}-authorizer-bypass-alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "AuthorizerCloudFrontBypass"
+  namespace           = "${var.project_name}/Security"
+  period              = 300
+  statistic           = "Sum"
+  threshold           = 1
+  treat_missing_data  = "notBreaching"
+  alarm_description   = "Fires when a request reaches the authorizer without a valid X-Origin-Verify header, indicating a CloudFront/WAF bypass attempt."
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
 }
 
 // Lambda Webhook Trigger Logs
@@ -165,12 +194,6 @@ resource "aws_sns_topic_subscription" "dev_email" {
   endpoint  = var.email
 }
 
-resource "aws_sns_topic_policy" "alerts_policy" {
-  arn    = aws_sns_topic.alerts.arn
-  policy = data.aws_iam_policy_document.event_bridge_sns_policy.json
-}
-
-
 
 
 // Scale-Up Trigger 
@@ -260,7 +283,7 @@ resource "aws_cloudwatch_metric_alarm" "dlq_not_empty" {
   period              = 300
   statistic           = "Maximum"
   threshold           = 1
-  alarm_description   = "Fires when an AI agent failes to process a PDF 3 times"
+  alarm_description   = "Fires when a job message hit an unexpected/unhandled worker failure 3x and was redriven to the DLQ. Not a document-rejection (those are marked FAILED and deleted)"
 
   dimensions = {
     QueueName = aws_sqs_queue.agent_dlq.name
@@ -284,6 +307,26 @@ resource "aws_cloudwatch_metric_alarm" "webhook_dlq_not_empty" {
 
   dimensions = {
     QueueName = aws_sqs_queue.webhook_dlq.name
+  }
+
+  alarm_actions = [aws_sns_topic.alerts.arn]
+}
+
+// Jobs Stream DLQ Alarm
+
+resource "aws_cloudwatch_metric_alarm" "jobs_stream_dlq_not_empty" {
+  alarm_name          = "${var.project_name}-jobs-stream-dlq-alarm"
+  comparison_operator = "GreaterThanOrEqualToThreshold"
+  evaluation_periods  = 1
+  metric_name         = "ApproximateNumberOfMessagesVisible"
+  namespace           = "AWS/SQS"
+  period              = 300
+  statistic           = "Maximum"
+  threshold           = 1
+  alarm_description   = "Fires when the webhook-trigger stream ESM exhausts its retries on a batch and drops its metadata into the jobs-stream DLQ. Job COMPLETED events may not have reached the webhook queue"
+
+  dimensions = {
+    QueueName = aws_sqs_queue.jobs_stream_dlq.name
   }
 
   alarm_actions = [aws_sns_topic.alerts.arn]
@@ -411,30 +454,6 @@ resource "aws_cloudwatch_metric_alarm" "webhook_lambda_failures" {
 
   alarm_actions = [aws_sns_topic.alerts.arn]
 }
-
-// EventBridge for GuardDuty
-
-resource "aws_cloudwatch_event_rule" "guardduty_finding" {
-  name        = "${var.project_name}-guardduty-finding"
-  description = "Triggers when GuardDuty detects a High-Severity threat"
-
-  event_pattern = jsonencode({
-    source      = ["aws.guardduty"]
-    detail-type = ["GuardDuty Finding"]
-    detail = {
-      severity = [{ numeric = [">=", 7] }]
-    }
-  })
-}
-
-resource "aws_cloudwatch_event_target" "sns" {
-  rule      = aws_cloudwatch_event_rule.guardduty_finding.name
-  target_id = "SendToSNS"
-  arn       = aws_sns_topic.alerts.arn
-}
-
-
-
 
 
 
