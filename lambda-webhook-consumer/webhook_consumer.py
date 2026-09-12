@@ -2,14 +2,29 @@ import os
 import json
 import logging
 import urllib.request
+import ipaddress
+import socket
 import hmac
 import hashlib
 import boto3
+from urllib.parse import urlparse
 from botocore.exceptions import ClientError, BotoCoreError
 from botocore.config import Config
 
 logger = logging.getLogger(__name__)
 logger.setLevel(logging.INFO)
+
+
+class WebhookURLValidationError(Exception):
+    pass
+
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        return None
+
+
+_no_redirect_opener = urllib.request.build_opener(_NoRedirectHandler)
 
 
 aws_config = Config(
@@ -99,7 +114,7 @@ def get_webhook_config(table, client_id):
         response = table.get_item(Key={"client_id": client_id})
         item = response.get("Item")
 
-        if item and item.get("active", True):
+        if item and item.get("active", False):
             return {
                 "webhook_url": item.get("webhook_url"),
                 "webhook_secret": item.get("webhook_secret"),
@@ -136,8 +151,66 @@ def get_job_summary(table, client_id, job_id):
         return None
 
 
+def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
+    """True for any IP that shouldn't be reachable from a webhook call"""
+    if isinstance(ip, ipaddress.IPv6Address) and ip.ipv4_mapped is not None:
+        ip = ip.ipv4_mapped
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validate_webhook_url(url: str) -> None:
+    """Validates a client-configured webhook URL before it is called, to block SSRF against internal infrastructure"""
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        raise WebhookURLValidationError(f"Webhook URL must use https: {url}")
+
+    hostname = parsed.hostname
+    if not hostname:
+        raise WebhookURLValidationError(f"Webhook URL has no host: {url}")
+
+    try:
+        literal_ip = ipaddress.ip_address(hostname)
+    except ValueError:
+        literal_ip = None
+
+    if literal_ip is not None:
+        if _is_blocked_ip(literal_ip):
+            raise WebhookURLValidationError(
+                f"Webhook URL host is a disallowed IP: {hostname}"
+            )
+        return
+
+    try:
+        resolved = socket.getaddrinfo(hostname, None)
+    except socket.gaierror as e:
+        raise WebhookURLValidationError(
+            f"Could not resolve webhook host {hostname}: {e}"
+        ) from e
+
+    for _family, _type, _proto, _canonname, sockaddr in resolved:
+        try:
+            resolved_ip = ipaddress.ip_address(sockaddr[0])
+        except ValueError:
+            raise WebhookURLValidationError(
+                f"Webhook host {hostname} resolved to an unparsable address: {sockaddr[0]}"
+            )
+        if _is_blocked_ip(resolved_ip):
+            raise WebhookURLValidationError(
+                f"Webhook host {hostname} resolves to a disallowed IP: {resolved_ip}"
+            )
+
+
 def send_webhook_notification(url, secret_key, client_id, job_id, summary):
     """Sends a POST request to the client's webhook URL"""
+    _validate_webhook_url(url)
+
     payload = {
         "event": "JOB_COMPLETED",
         "client_id": client_id,
@@ -159,7 +232,7 @@ def send_webhook_notification(url, secret_key, client_id, job_id, summary):
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
     try:
-        with urllib.request.urlopen(req, timeout=10) as response:
+        with _no_redirect_opener.open(req, timeout=10) as response:
             status = response.getcode()
             if status >= 200 and status < 300:
                 return True
