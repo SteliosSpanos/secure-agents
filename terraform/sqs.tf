@@ -132,6 +132,24 @@ resource "aws_sqs_queue_policy" "webhook_queue_policy" {
 
 
 
+// Jobs Stream Dead Letter Queue
+// On-failure destination for the webhook_trigger Lambda's DynamoDB Stream event source mapping. 
+// Stream ESMs don't use SQS redrive, they write the failed batch's metadata here directly, so no redrive_allow_policy is needed.
+
+resource "aws_sqs_queue" "jobs_stream_dlq" {
+  name                              = "${var.project_name}-jobs-stream-dlq"
+  message_retention_seconds         = var.sqs_dlq_retention_days * 86400 // 14 days (max allowed)
+  kms_master_key_id                 = aws_kms_key.shared.arn
+  kms_data_key_reuse_period_seconds = 300
+
+  tags = {
+    Name = "${var.project_name}-jobs-stream-dlq"
+  }
+}
+
+
+
+
 // Webhook Consumer Lambda
 
 data "archive_file" "webhook_consumer_zip" {
