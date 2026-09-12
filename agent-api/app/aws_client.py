@@ -47,16 +47,17 @@ def build_object_key(client_id: str, job_id: str, filename: str) -> str:
     """Validates the filename and returns the canonical S3 object key"""
     safe_name = re.sub(r"[^a-zA-Z0-9.\-_]", "_", filename)
 
-    if not safe_name.lower().endswith("pdf"):
+    if not safe_name.lower().endswith(".pdf"):
         logger.warning(f"Client {client_id} attempted to upload non-PDF: {filename}")
         raise UserInputError("Only .pdf files are allowed.")
 
-    stem = safe_name.rsplit(".", 1)[0]
+    stem = safe_name[: -len(".pdf")]
     if len(stem) < 1:
         logger.warning(f"Client {client_id} supplied an invalid filename: {filename}")
         raise UserInputError("Invalid filename.")
 
-    return f"{client_id}/uploads/{job_id}/{safe_name}"
+    normalized_name = f"{stem}.pdf"
+    return f"{client_id}/uploads/{job_id}/{normalized_name}"
 
 
 def generate_presigned_upload(client_id: str, job_id: str, object_key: str) -> Dict:
@@ -125,8 +126,7 @@ def get_job_status(client_id: str, job_id: str) -> Optional[Dict]:
 
 def init_job_record(client_id: str, job_id: str, s3_path: str) -> None:
     """Logs the job as PENDING to ensure auditability before upload starts"""
-
-    expiration = int(time.time()) + (24 * 60 * 60)
+    expiration = int(time.time()) + (settings.JOB_INITIAL_TTL_DAYS * 24 * 60 * 60)
 
     try:
         jobs_table.put_item(
