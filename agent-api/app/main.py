@@ -103,7 +103,7 @@ def request_upload(
 def get_job_status(job_id: UUID, client_id: str = Depends(get_client_id)):
     """Securely check the status of a document processing job"""
     try:
-        status_info = aws_client.get_job_status(client_id, job_id)
+        status_info = aws_client.get_job_status(client_id, str(job_id))
     except aws_client.AWSDatabaseError:
         raise HTTPException(
             status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
