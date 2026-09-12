@@ -46,11 +46,11 @@ jobs:
       - name: Resolve service settings
         id: settings 
         run: |
-          if [ "${{ inputs.service }}" == "api" ]; then 
+          if [ "${{ inputs.service }}" = "api" ]; then
             echo "ecr_repo=agents-api" >> "$GITHUB_OUTPUT"
-            echo "task_def_family==agents-api" >> "$GITHUB_OUTPUT"
+            echo "task_def_family=agents-api" >> "$GITHUB_OUTPUT"
             echo "ecs_service=agents-api-service" >> "$GITHUB_OUTPUT"
-            echo "container_name==fastapi-container" >> "$GITHUB_OUTPUT"
+            echo "container_name=fastapi-container" >> "$GITHUB_OUTPUT"
             echo "ssm_param=/agents/api/last-stable-sha" >> "$GITHUB_OUTPUT"
           else 
             echo "ecr_repo=agents-worker" >> "$GITHUB_OUTPUT"
@@ -64,12 +64,12 @@ jobs:
       - name: Resolve target SHA 
         id: target 
         run: |
-          if [ -n "${{ inputs.sha }}" ]; then 
+          if [ -n "${{ inputs.sha }}" ]; then
             echo "sha=${{ inputs.sha }}" >> "$GITHUB_OUTPUT"
           else 
             LAST_GOOD=$(aws ssm get-parameter \
               --name "${{ steps.settings.outputs.ssm_param }}" \
-              --query 'Parameter.Value' -- output text)
+              --query 'Parameter.Value' --output text)
             echo "sha=$LAST_GOOD" >> "$GITHUB_OUTPUT"
           fi 
 
@@ -89,8 +89,8 @@ jobs:
         id: render-task-def
         uses: aws-actions/amazon-ecs-render-task-definition@v1
         with:
-          task-definition: task-def.json 
-          container_name: ${{ steps.settings.outputs.container_name }}
+          task-definition: task-def.json
+          container-name: ${{ steps.settings.outputs.container_name }}
           image: ${{ steps.login-ecr.outputs.registry }}/${{ steps.settings.outputs.ecr_repo }}:${{ steps.target.outputs.sha }}
 
       - name: Deploy rollback to ECS 
