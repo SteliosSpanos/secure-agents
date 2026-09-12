@@ -321,30 +321,6 @@ data "aws_iam_policy_document" "shared_kms_policy" {
       values   = [aws_s3_bucket.agents.arn]
     }
   }
-
-  statement {
-    sid    = "AllowEventBridgeToUseKey"
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-    actions = [
-      "kms:Decrypt",
-      "kms:GenerateDataKey*"
-    ]
-    resources = ["*"]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
-    }
-    condition {
-      test     = "ArnEquals"
-      variable = "aws:SourceArn"
-      values   = [aws_cloudwatch_event_rule.guardduty_finding.arn]
-    }
-  }
 }
 
 // API Keys Table KMS Policy
@@ -549,6 +525,15 @@ data "aws_iam_policy_document" "vpc_flow_log" {
 
 
 
+locals {
+  admin_principal_exemptions = concat(
+    [
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
+      "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/GithubActionsRole"
+    ],
+    var.admin_principal_arns
+  )
+}
 
 // DynamoDB Jobs Table Resource-Based Policy
 
@@ -565,28 +550,20 @@ data "aws_iam_policy_document" "jobs_table_policy" {
       aws_dynamodb_table.jobs.arn,
       "${aws_dynamodb_table.jobs.arn}/*"
     ]
-
     condition {
       test     = "StringNotEquals"
       variable = "aws:SourceVpce"
       values   = [aws_vpc_endpoint.dynamodb.id]
     }
-
     condition {
       test     = "StringNotEquals"
       variable = "aws:PrincipalType"
       values   = ["Service"]
     }
-
-    // Prevent lockout. Allow the account root to always manage the policy.
     condition {
       test     = "ArnNotLike"
       variable = "aws:PrincipalArn"
-      values = [
-        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
-        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/GithubActionsRole",
-        data.aws_caller_identity.current.arn
-      ]
+      values   = concat(local.admin_principal_exemptions, [aws_iam_role.webhook_trigger_role.arn])
     }
   }
 }
@@ -619,11 +596,7 @@ data "aws_iam_policy_document" "api_keys_table_policy" {
     condition {
       test     = "ArnNotLike"
       variable = "aws:PrincipalArn"
-      values = [
-        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:root",
-        "arn:aws:iam::${data.aws_caller_identity.current.account_id}:role/GithubActionsRole",
-        data.aws_caller_identity.current.arn
-      ]
+      values   = local.admin_principal_exemptions
     }
   }
 }
@@ -714,14 +687,19 @@ data "aws_iam_policy_document" "api_iam_policy" {
   }
 
   statement {
-    sid       = "S3PresignedPost"
-    effect    = "Allow"
-    actions   = ["s3:PutObject"]
-    resources = ["${aws_s3_bucket.agents.arn}/*"]
+    sid     = "S3PresignedPost"
+    effect  = "Allow"
+    actions = ["s3:PutObject"]
+    // Key shape must match build_object_key() in agent-api/app/aws_client.py: {client_id}/uploads/{job_id}/{filename}
+    resources = ["${aws_s3_bucket.agents.arn}/*/uploads/*"]
   }
 }
 
 // Agent Task Policy
+
+locals {
+  bedrock_haiku_destination_regions = ["eu-central-1", "eu-west-1", "eu-west-3"]
+}
 
 data "aws_iam_policy_document" "agent_iam_policy" {
   statement {
@@ -732,12 +710,9 @@ data "aws_iam_policy_document" "agent_iam_policy" {
   }
 
   statement {
-    sid    = "S3Processing"
-    effect = "Allow"
-    actions = [
-      "s3:GetObject",
-      "s3:HeadObject"
-    ]
+    sid       = "S3Processing"
+    effect    = "Allow"
+    actions   = ["s3:GetObject"]
     resources = ["${aws_s3_bucket.agents.arn}/*"]
   }
 
@@ -759,10 +734,15 @@ data "aws_iam_policy_document" "agent_iam_policy" {
       "bedrock:InvokeModel",
       "bedrock:InvokeModelWithResponseStream"
     ]
-    resources = [
-      "arn:aws:bedrock:${var.region}::foundation-model/*anthropic.claude-3-haiku*",
-      "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/*anthropic.claude-3-haiku*"
-    ]
+    resources = concat(
+      [
+        "arn:aws:bedrock:${var.region}:${data.aws_caller_identity.current.account_id}:inference-profile/*anthropic.claude-3-haiku*"
+      ],
+      [
+        for r in local.bedrock_haiku_destination_regions :
+        "arn:aws:bedrock:${r}::foundation-model/*anthropic.claude-3-haiku*"
+      ]
+    )
   }
 
   statement {
@@ -909,9 +889,14 @@ data "aws_iam_policy_document" "webhook_trigger_iam_policy" {
   }
 
   statement {
-    effect    = "Allow"
-    actions   = ["sqs:SendMessage"]
-    resources = [aws_sqs_queue.webhook_queue.arn]
+    effect  = "Allow"
+    actions = ["sqs:SendMessage"]
+    resources = [
+      aws_sqs_queue.webhook_queue.arn,
+      // The Lambda service writes failed-batch metadata here on the ESM's behalf, but the
+      // execution role still needs SendMessage on the on-failure destination.
+      aws_sqs_queue.jobs_stream_dlq.arn
+    ]
   }
 
   statement {
@@ -1025,27 +1010,3 @@ data "aws_iam_policy_document" "instance_iam_policy" {
 
 
 
-// SNS Topic Policy for EventBridge
-
-data "aws_iam_policy_document" "event_bridge_sns_policy" {
-  statement {
-    sid    = "AllowEventBridgeToPublish"
-    effect = "Allow"
-    principals {
-      type        = "Service"
-      identifiers = ["events.amazonaws.com"]
-    }
-    actions   = ["sns:Publish"]
-    resources = [aws_sns_topic.alerts.arn]
-    condition {
-      test     = "StringEquals"
-      variable = "aws:SourceAccount"
-      values   = [data.aws_caller_identity.current.account_id]
-    }
-    condition {
-      test     = "ArnEquals"
-      variable = "aws:SourceArn"
-      values   = [aws_cloudwatch_event_rule.guardduty_finding.arn]
-    }
-  }
-}
