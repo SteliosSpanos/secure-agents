@@ -200,8 +200,8 @@ def process_document(
     client_id: str, job_id: str, bucket: str, key: str, receipt_handle: str
 ) -> tuple[str, bool]:
     """Extracts text and asks Bedrock to summarize it"""
-    extend_sqs_visibility(receipt_handle)
     extend_job_lock(client_id, job_id)
+    extend_sqs_visibility(receipt_handle)
 
     document_text = extract_text_from_s3_pdf(bucket, key)
     write_heartbeat()
@@ -217,8 +217,8 @@ def process_document(
         )
         document_text = document_text[:char_limit]
 
-    extend_sqs_visibility(receipt_handle)
     extend_job_lock(client_id, job_id)
+    extend_sqs_visibility(receipt_handle)
 
     logger.info("Text extracted. Invoking Agent...")
 
@@ -313,6 +313,10 @@ class JobRecordMissingError(Exception):
     pass
 
 
+class LockLostError(Exception):
+    pass
+
+
 def acquire_job_lock(client_id: str, job_id: str) -> bool:
     """Claims a job for processing using a lock-lease, tolerating a crashed
     worker's stale lock instead of a naive PENDING_UPLOAD-only equality check"""
@@ -359,7 +363,10 @@ def acquire_job_lock(client_id: str, job_id: str) -> bool:
 
 
 def extend_job_lock(client_id: str, job_id: str) -> None:
-    """Pushes the lock lease forward alongside each SQS visibility extension"""
+    """Pushes the lock lease forward. Must succeed before the SQS visibility
+    timeout is extended and if the lock lease can't be confirmed as extended,
+    the caller can no longer be sure it exclusively holds the job and must
+    stop processing"""
     new_lease = int(time.time()) + settings.VISIBILITY_TIMEOUT_SECONDS
 
     try:
@@ -378,12 +385,17 @@ def extend_job_lock(client_id: str, job_id: str) -> None:
             logger.warning(
                 f"Could not extend lock lease for job {job_id}; no longer PROCESSING."
             )
-            return
+            raise LockLostError(
+                f"Lock lease for job {job_id} is no longer held."
+            ) from e
         logger.exception(f"Failed to extend lock lease for job {job_id}.")
-    except BotoCoreError:
+        raise LockLostError(f"Failed to extend lock lease for job {job_id}.") from e
+    except BotoCoreError as e:
         logger.exception(f"AWS SDK error extending lock lease for job {job_id}.")
-    except Exception:
+        raise LockLostError(f"Failed to extend lock lease for job {job_id}.") from e
+    except Exception as e:
         logger.exception(f"Unexpected error extending lock lease for job {job_id}.")
+        raise LockLostError(f"Failed to extend lock lease for job {job_id}.") from e
 
 
 def main():
@@ -455,7 +467,7 @@ def main():
                             final_summary = summary
                             if is_truncated:
                                 final_summary = (
-                                    f"[Note: document was truncated to {settings.CHAR_LIMIT} characters]"
+                                    f"[Note: document was truncated to {settings.CHAR_LIMIT} characters] "
                                     + summary
                                 )
 

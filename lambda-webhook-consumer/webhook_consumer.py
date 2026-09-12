@@ -2,8 +2,10 @@ import os
 import json
 import logging
 import urllib.request
+import http.client
 import ipaddress
 import socket
+import functools
 import hmac
 import hashlib
 import boto3
@@ -24,7 +26,38 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
         return None
 
 
-_no_redirect_opener = urllib.request.build_opener(_NoRedirectHandler)
+class _PinnedHTTPSConnection(http.client.HTTPSConnection):
+    """HTTPS connection that connects to a pre-validated IP instead of re-resolving the host.
+
+    The Host header and TLS SNI/certificate hostname checking still use
+    ``self.host`` untouched - only the raw TCP connect target is pinned to the
+    IP address that was already validated against SSRF blocklists, closing the
+    DNS-rebinding TOCTOU window between validation and connect.
+    """
+
+    def __init__(self, *args, pinned_ip=None, **kwargs):
+        self._pinned_ip = pinned_ip
+        super().__init__(*args, **kwargs)
+
+    def connect(self):
+        self.sock = socket.create_connection(
+            (self._pinned_ip or self.host, self.port), self.timeout, self.source_address
+        )
+        if self._tunnel_host:
+            self._tunnel()
+        self.sock = self._context.wrap_socket(self.sock, server_hostname=self.host)
+
+
+class _PinnedHTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, pinned_ip):
+        super().__init__()
+        self._pinned_ip = pinned_ip
+
+    def https_open(self, req):
+        return self.do_open(
+            functools.partial(_PinnedHTTPSConnection, pinned_ip=self._pinned_ip),
+            req,
+        )
 
 
 aws_config = Config(
@@ -165,8 +198,13 @@ def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
     )
 
 
-def _validate_webhook_url(url: str) -> None:
-    """Validates a client-configured webhook URL before it is called, to block SSRF against internal infrastructure"""
+def _validate_webhook_url(url: str) -> str:
+    """Validates a client-configured webhook URL before it is called, to block SSRF against internal infrastructure.
+
+    Returns the validated IP address to pin the outgoing connection to, so the
+    connection cannot be re-resolved to a different (potentially internal)
+    address after validation (DNS rebinding).
+    """
     parsed = urlparse(url)
     if parsed.scheme != "https":
         raise WebhookURLValidationError(f"Webhook URL must use https: {url}")
@@ -185,7 +223,7 @@ def _validate_webhook_url(url: str) -> None:
             raise WebhookURLValidationError(
                 f"Webhook URL host is a disallowed IP: {hostname}"
             )
-        return
+        return str(literal_ip)
 
     try:
         resolved = socket.getaddrinfo(hostname, None)
@@ -194,6 +232,12 @@ def _validate_webhook_url(url: str) -> None:
             f"Could not resolve webhook host {hostname}: {e}"
         ) from e
 
+    if not resolved:
+        raise WebhookURLValidationError(
+            f"Webhook host {hostname} did not resolve to any address"
+        )
+
+    pinned_ip = None
     for _family, _type, _proto, _canonname, sockaddr in resolved:
         try:
             resolved_ip = ipaddress.ip_address(sockaddr[0])
@@ -205,11 +249,15 @@ def _validate_webhook_url(url: str) -> None:
             raise WebhookURLValidationError(
                 f"Webhook host {hostname} resolves to a disallowed IP: {resolved_ip}"
             )
+        if pinned_ip is None:
+            pinned_ip = str(resolved_ip)
+
+    return pinned_ip
 
 
 def send_webhook_notification(url, secret_key, client_id, job_id, summary):
     """Sends a POST request to the client's webhook URL"""
-    _validate_webhook_url(url)
+    pinned_ip = _validate_webhook_url(url)
 
     payload = {
         "event": "JOB_COMPLETED",
@@ -231,8 +279,12 @@ def send_webhook_notification(url, secret_key, client_id, job_id, summary):
 
     req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
+    opener = urllib.request.build_opener(
+        _NoRedirectHandler, _PinnedHTTPSHandler(pinned_ip)
+    )
+
     try:
-        with _no_redirect_opener.open(req, timeout=10) as response:
+        with opener.open(req, timeout=10) as response:
             status = response.getcode()
             if status >= 200 and status < 300:
                 return True
