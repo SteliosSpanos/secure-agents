@@ -218,8 +218,8 @@ All system logs are encrypted with Customer Managed Keys (CMKs) and retained for
 
 High-priority alerts are sent via SNS to the developer team:
 
-- **Security Alerts:** Triggered by **GuardDuty Findings** (Severity >= 7).
-- **Processing Failures:** Fires if the **Agent DLQ** or **Webhook DLQ** receives a failed message.
+- **Security Alerts:** Triggered by an **Authorizer CloudFront/WAF bypass** (a request reaching the authorizer without a valid `X-Origin-Verify` header).
+- **Processing Failures:** Fires if the **Agent DLQ**, **Webhook DLQ**, or **Jobs Stream DLQ** receives a failed message.
 - **Infrastructure Health:** Alerts for **NAT Instance status check failures** or **High ALB 5XX error rates**.
 - **Performance Bottlenecks:** Alerts for **High ALB Latency (>1s)** or **SQS Stalling** (messages older than 20 mins).
 
@@ -234,16 +234,16 @@ A centralized CloudWatch Dashboard provides real-time visibility into:
 
 ## Estimated Monthly Costs
 
-| Service                | Estimated Cost   | Logic                                                     |
-| :--------------------- | :--------------- | :-------------------------------------------------------- |
-| **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.                 |
-| **VPC Endpoints**      | ~$115 - $140     | 9x Endpoints (S3, SQS, KMS, Bedrock, ECR, etc.) in 2 AZs. |
-| **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0).   |
-| **NAT Instances**      | ~$14             | 2x t3.micro instances (one per AZ) vs ~$64 for NAT GW.    |
-| **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.             |
-| **Database & Storage** | ~$5 - $10        | S3, DynamoDB, SQS (pay-per-request/GB) + Audit Logs.      |
-| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Claude 3 Haiku is very cheap).   |
-| **Total Base**         | **~$185 - $240** | Production-grade security for less than $8.00/day.        |
+| Service                | Estimated Cost   | Logic                                                                                                     |
+| :--------------------- | :--------------- | :-------------------------------------------------------------------------------------------------------- |
+| **Edge Defense (WAF)** | ~$7 - $15        | Base cost for Web ACL + Rate Limit rules.                                                                 |
+| **VPC Endpoints**      | ~$90 - $110      | 7x Endpoints (SQS, KMS, Bedrock, ECR, STS, Logs, etc.) in 2 AZs, plus free S3/DynamoDB Gateway Endpoints. |
+| **Compute (Fargate)**  | ~$25 - $40       | 2x small API tasks + fluctuating workers (scales to 0).                                                   |
+| **NAT Instances**      | ~$14             | 2x t3.micro instances (one per AZ) vs ~$64 for NAT GW.                                                    |
+| **Load Balancing**     | ~$20             | Internal ALB base cost for high availability.                                                             |
+| **Database & Storage** | ~$5 - $10        | S3, DynamoDB, SQS (pay-per-request/GB) + Audit Logs.                                                      |
+| **AI (Bedrock)**       | Variable         | Billed per 1,000 tokens (Claude 3 Haiku is very cheap).                                                   |
+| **Total Base**         | **~$160 - $210** | Production-grade security for less than $7.00/day.                                                        |
 
 ---
 
@@ -266,18 +266,23 @@ A centralized CloudWatch Dashboard provides real-time visibility into:
 4. Navigate to `terraform/`.
 5. Run `terraform init` and `terraform apply`.
 
+**Notes**
+
+- After the first `apply`, the ECS services' task definitions are owned by CI (`ignore_changes`), not Terraform. A later manual `apply` will not revert `agents-api-service` / `agents-worker-service` to the bootstrap placeholder image.
+- The document bucket, its access-log bucket, and the remote state bucket all have `prevent_destroy = true`. A `terraform destroy` of either root fails until that lifecycle block is removed by hand.
+
 ---
 
 ## GitHub Actions & CI/CD Pipeline
 
 Deployments are handled by four independent workflow files in `.github/workflows/`, split per-service so a change to one component doesn't rebuild or redeploy the other:
 
-| Workflow              | Trigger                                                     | Purpose                                                                                                          |
-| --------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| `reusable-checks.yml` | Called by the two deploy workflows (not triggered directly) | Runs Ruff lint + format checks, and the pytest suite (with an 80% coverage floor) for whichever service calls it |
-| `deploy-api.yml`      | Push to `main` touching `agent-api/**`                      | Builds, tests, and deploys the FastAPI service                                                                   |
-| `deploy-worker.yml`   | Push to `main` touching `agent-worker/**`                   | Builds, tests, and deploys the AI worker, including a real ECS smoke test before promoting                       |
-| `rollback.yml`        | Manual (`workflow_dispatch`) only                           | Redeploys a previous image for either service on demand                                                          |
+| Workflow              | Trigger                                                     | Purpose                                                                                                                                              |
+| --------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `reusable-checks.yml` | Called by the two deploy workflows (not triggered directly) | Runs Ruff lint + format checks, and the pytest suite (with a 55% coverage floor, being raised as test coverage grows) for whichever service calls it |
+| `deploy-api.yml`      | Push to `main` touching `agent-api/**`                      | Builds, tests, and deploys the FastAPI service                                                                                                       |
+| `deploy-worker.yml`   | Push to `main` touching `agent-worker/**`                   | Builds, tests, and deploys the AI worker, including a real ECS smoke test before promoting                                                           |
+| `rollback.yml`        | Manual (`workflow_dispatch`) only                           | Redeploys a previous image for either service on demand                                                                                              |
 
 ### Build & Deploy Flow
 
@@ -389,7 +394,7 @@ Your endpoint will receive a `POST` request once the AI pipeline finishes proces
 
 ## Data Handling Policy
 
-- **Jobs Table:** Records expire after **30 days** (via TTL).
+- **Jobs Table:** A job record is written with a **7-day TTL** at upload time (long enough to outlive the 4-day SQS retention window, so a delayed pickup can never find its own record already gone), then extended to **30 days** once the worker picks it up.
 - **S3 Storage:** Documents are automatically purged after **30 days**.
 - **Audit Logs:** Retained for **90 days**.
 - **Point-In-Time Recovery:** Enabled for all DynamoDB tables.
