@@ -12,8 +12,11 @@ class Settings(BaseSettings):
 
     MAX_FILE_SIZE_MB: int = Field(default=50, alias="MAX_FILE_SIZE_MB")
 
+    # The TTL for a job record must comfortably outlive sqs_retention_days
+    JOB_INITIAL_TTL_DAYS: int = Field(default=7, alias="JOB_INITIAL_TTL_DAYS")
+
     ALLOWED_ORIGINS: list[str] = Field(
-        default=["http://localhost:3000", "https://d90xnc0ve8xm0.cloudfront.net"],
+        default=[],
         alias="ALLOWED_ORIGINS",
     )
 
