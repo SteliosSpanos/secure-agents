@@ -23,6 +23,7 @@ if not WEBHOOK_QUEUE_URL:
 def lambda_handler(event, context):
     """Triggers from DynamoDB stream when a new job is completed and sends the a message to SQS for the webhook service"""
     records_processed = 0
+    batch_item_failures = []
     for record in event.get("Records", []):
         try:
             if record.get("eventName") != "MODIFY":
@@ -77,10 +78,29 @@ def lambda_handler(event, context):
             logger.exception(
                 "AWS SDK error while processing record: %s", record.get("eventID")
             )
+            _mark_failed(record, batch_item_failures)
         except Exception:
             logger.exception(
                 "Unexpected error while processing record: %s", record.get("eventID")
             )
+            _mark_failed(record, batch_item_failures)
 
-    logger.info("Successfully processed %d job completion events.", records_processed)
-    return {"success": True, "processed_count": records_processed}
+    logger.info(
+        "Processed %d job completion events, %d record(s) reported for retry.",
+        records_processed,
+        len(batch_item_failures),
+    )
+    # Return the failures to the Event Source Mapping (ESM)
+    return {"batchItemFailures": batch_item_failures}
+
+
+def _mark_failed(record, batch_item_failures):
+    """Report a stream record back to the ESM for retry via partial batch response."""
+    sequence_number = record.get("dynamodb", {}).get("SequenceNumber")
+    if not sequence_number:
+        logger.error(
+            "Cannot report record for retry: missing SequenceNumber (eventID = %s)",
+            record.get("eventID"),
+        )
+        return
+    batch_item_failures.append({"itemIdentifier": sequence_number})
