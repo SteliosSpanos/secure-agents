@@ -45,6 +45,23 @@ shutdown_flag = False
 active_job = {"client_id": None, "job_id": None, "receipt_handle": None}
 
 
+class PDFExtractionTimeoutError(Exception):
+    pass
+
+
+def _raise_extraction_timeout(signum, frame):
+    raise PDFExtractionTimeoutError("PDF parsing exceeded the time limit")
+
+
+def write_heartbeat() -> None:
+    """Drops a liveness timestamp for the ECS container health check to read"""
+    try:
+        with open(settings.HEARTBEAT_FILE_PATH, "w") as heartbeat_file:
+            heartbeat_file.write(str(time.time()))
+    except OSError:
+        logger.exception("Failed to write heartbeat file.")
+
+
 def handle_sigterm(*args):
     global shutdown_flag
     logger.info("SIGTERM received. Fargate container scaling in.")
@@ -56,16 +73,26 @@ def handle_sigterm(*args):
             f"Emergency Rescue: Reverting job {active_job['job_id']} to PENDING_UPLOAD."
         )
         try:
-            # Revert status back to PENDING_UPLOAD
-            update_job(active_job["client_id"], active_job["job_id"], "PENDING_UPLOAD")
-
-            # Make the SQS message visible immediately so another worker can pick it up
-            sqs.change_message_visibility(
-                QueueUrl=settings.SQS_QUEUE_URL,
-                ReceiptHandle=active_job["receipt_handle"],
-                VisibilityTimeout=0,
+            # Only revert if the job is still PROCESSING
+            reverted = update_job(
+                active_job["client_id"],
+                active_job["job_id"],
+                "PENDING_UPLOAD",
+                expected_status="PROCESSING",
             )
-            logger.info("Rescue complete. Exiting gracefully.")
+
+            if reverted:
+                # Make the SQS message visible immediately so another worker can pick it up
+                sqs.change_message_visibility(
+                    QueueUrl=settings.SQS_QUEUE_URL,
+                    ReceiptHandle=active_job["receipt_handle"],
+                    VisibilityTimeout=0,
+                )
+                logger.info("Rescue complete. Exiting gracefully.")
+            else:
+                logger.info(
+                    f"Job {active_job['job_id']} already left PROCESSING, leaving the SQS message alone."
+                )
         except (ClientError, BotoCoreError):
             logger.exception(f"AWS SDK error during rescue of {active_job['job_id']}.")
         except Exception:
@@ -78,7 +105,9 @@ signal.signal(signal.SIGTERM, handle_sigterm)
 signal.signal(signal.SIGINT, handle_sigterm)
 
 
-def extend_sqs_visibility(receipt_handle: str, timeout: int = 600):
+def extend_sqs_visibility(
+    receipt_handle: str, timeout: int = settings.VISIBILITY_TIMEOUT_SECONDS
+):
     """Extends the SQS visibility timeout to prevent other workers from taking this job"""
     try:
         sqs.change_message_visibility(
@@ -111,10 +140,18 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     logger.info(f"Downloading s3://{bucket}/{decoded_key}")
 
     tmp_file_path = None
+    previous_alarm_handler = None
     try:
         with tempfile.NamedTemporaryFile(delete=False) as tmp_file:
             s3.download_fileobj(bucket, decoded_key, tmp_file)
             tmp_file_path = tmp_file.name
+
+        # Hard wall-clock timeout covering PdfReader construction through the page
+        # loop, so a pathological/malicious PDF can't hang the worker indefinitely.
+        previous_alarm_handler = signal.signal(
+            signal.SIGALRM, _raise_extraction_timeout
+        )
+        signal.alarm(settings.PDF_EXTRACTION_TIMEOUT_SECONDS)
 
         reader = PdfReader(tmp_file_path)
 
@@ -142,6 +179,9 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
     except PdfReadError:
         logger.exception(f"PdfReadError for {decoded_key}.")
         raise ValueError("PDF structure is corrupted")
+    except PDFExtractionTimeoutError:
+        logger.exception(f"PDF parsing timed out for {decoded_key}.")
+        raise ValueError("PDF parsing exceeded the time limit")
     except (ClientError, BotoCoreError):
         logger.exception(f"Failed to download or process s3://{bucket}/{decoded_key}")
         raise
@@ -149,15 +189,22 @@ def extract_text_from_s3_pdf(bucket: str, key: str) -> str:
         logger.exception(f"Unexpected parsing error for {decoded_key}.")
         raise ValueError("Could not parse PDF")
     finally:
+        signal.alarm(0)
+        if previous_alarm_handler is not None:
+            signal.signal(signal.SIGALRM, previous_alarm_handler)
         if tmp_file_path and os.path.exists(tmp_file_path):
             os.remove(tmp_file_path)
 
 
-def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, bool]:
+def process_document(
+    client_id: str, job_id: str, bucket: str, key: str, receipt_handle: str
+) -> tuple[str, bool]:
     """Extracts text and asks Bedrock to summarize it"""
     extend_sqs_visibility(receipt_handle)
+    extend_job_lock(client_id, job_id)
 
     document_text = extract_text_from_s3_pdf(bucket, key)
+    write_heartbeat()
 
     if not document_text:
         raise ValueError("PDF contained no readable text.")
@@ -171,6 +218,7 @@ def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, b
         document_text = document_text[:char_limit]
 
     extend_sqs_visibility(receipt_handle)
+    extend_job_lock(client_id, job_id)
 
     logger.info("Text extracted. Invoking Agent...")
 
@@ -205,8 +253,12 @@ def process_document(bucket: str, key: str, receipt_handle: str) -> tuple[str, b
         messages=messages,
         inferenceConfig={"maxTokens": 512, "temperature": 0.3, "topP": 0.9},
     )
+    write_heartbeat()
 
-    summary = response["output"]["message"]["content"][0]["text"].strip()
+    try:
+        summary = response["output"]["message"]["content"][0]["text"].strip()
+    except (KeyError, IndexError, TypeError, AttributeError) as e:
+        raise RuntimeError(f"Unexpected Bedrock converse response shape: {e}") from e
     return summary, is_truncated
 
 
@@ -237,13 +289,8 @@ def update_job(
     }
 
     if expected_status:
-        if expected_status == "PENDING_UPLOAD":
-            kwargs["ConditionExpression"] = "#s IN (:exp1, :exp2)"
-            kwargs["ExpressionAttributeValues"][":exp1"] = "PENDING_UPLOAD"
-            kwargs["ExpressionAttributeValues"][":exp2"] = "PROCESSING"
-        else:
-            kwargs["ConditionExpression"] = "#s = :expected_status"
-            kwargs["ExpressionAttributeValues"][":expected_status"] = expected_status
+        kwargs["ConditionExpression"] = "#s = :expected_status"
+        kwargs["ExpressionAttributeValues"][":expected_status"] = expected_status
 
     try:
         jobs_table.update_item(**kwargs)
@@ -262,12 +309,92 @@ def update_job(
         raise
 
 
+class JobRecordMissingError(Exception):
+    pass
+
+
+def acquire_job_lock(client_id: str, job_id: str) -> bool:
+    """Claims a job for processing using a lock-lease, tolerating a crashed
+    worker's stale lock instead of a naive PENDING_UPLOAD-only equality check"""
+    now = int(time.time())
+    lease_expiration = now + settings.VISIBILITY_TIMEOUT_SECONDS
+    new_expiration = int(time.time()) + (30 * 24 * 60 * 60)
+
+    kwargs = {
+        "Key": {"client_id": client_id, "job_id": job_id},
+        "UpdateExpression": "SET #s = :processing, lock_expires_at = :lease, expires_at = :ttl",
+        "ConditionExpression": (
+            "#s = :pending OR (#s = :processing AND "
+            "(attribute_not_exists(lock_expires_at) OR lock_expires_at < :now))"
+        ),
+        "ExpressionAttributeNames": {"#s": "status"},
+        "ExpressionAttributeValues": {
+            ":processing": "PROCESSING",
+            ":pending": "PENDING_UPLOAD",
+            ":lease": lease_expiration,
+            ":ttl": new_expiration,
+            ":now": now,
+        },
+        # Asks DynamoDB to return the pre-update item on a failed condition check, so we can tell "record missing" apart from "record exists but condition didn't match"
+        "ReturnValuesOnConditionCheckFailure": "ALL_OLD",
+    }
+
+    try:
+        jobs_table.update_item(**kwargs)
+        return True
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            if e.response.get("Item") is None:
+                raise JobRecordMissingError(
+                    f"No job record for client {client_id}, job {job_id}."
+                ) from e
+            return False  # Another worker already holds a live lease
+        raise
+    except BotoCoreError:
+        logger.exception(f"AWS SDK Transport Error acquiring lock for job {job_id}.")
+        raise
+    except Exception:
+        logger.exception(f"Unexpected system error acquiring lock for job {job_id}.")
+        raise
+
+
+def extend_job_lock(client_id: str, job_id: str) -> None:
+    """Pushes the lock lease forward alongside each SQS visibility extension"""
+    new_lease = int(time.time()) + settings.VISIBILITY_TIMEOUT_SECONDS
+
+    try:
+        jobs_table.update_item(
+            Key={"client_id": client_id, "job_id": job_id},
+            UpdateExpression="SET lock_expires_at = :lease",
+            ConditionExpression="#s = :processing",
+            ExpressionAttributeNames={"#s": "status"},
+            ExpressionAttributeValues={
+                ":lease": new_lease,
+                ":processing": "PROCESSING",
+            },
+        )
+    except ClientError as e:
+        if e.response["Error"]["Code"] == "ConditionalCheckFailedException":
+            logger.warning(
+                f"Could not extend lock lease for job {job_id}; no longer PROCESSING."
+            )
+            return
+        logger.exception(f"Failed to extend lock lease for job {job_id}.")
+    except BotoCoreError:
+        logger.exception(f"AWS SDK error extending lock lease for job {job_id}.")
+    except Exception:
+        logger.exception(f"Unexpected error extending lock lease for job {job_id}.")
+
+
 def main():
-    # AWS Errors -> revert back to PENDING_UPLOAD with re-raise to be retried
-    # Unexpected Errors -> mark as FAILED with error summary and delete message to avoid retries
+    # Per-job error handling:
+    # - AWS ClientError/BotoCoreError -> revert to PENDING_UPLOAD and re-raise. Message stays in the queue for retry
+    # - ValueError (bad/unusable document) -> terminal FAILED with a rejection reason, then the SQS message is deleted (retrying can't help)
+    # - Any other exception -> no job-row write, re-raise, message is left for SQS redrive and lands in the DLQ
     logger.info("Worker daemon started. Listening for SQS messages...")
 
     while not shutdown_flag:
+        write_heartbeat()
         try:
             response = sqs.receive_message(
                 QueueUrl=settings.SQS_QUEUE_URL,
@@ -300,12 +427,14 @@ def main():
                             logger.warning(f"Malformed S3 key: {key}")
                             continue
 
-                        lock_acquired = update_job(
-                            client_id,
-                            job_id,
-                            status_val="PROCESSING",
-                            expected_status="PENDING_UPLOAD",
-                        )
+                        try:
+                            lock_acquired = acquire_job_lock(client_id, job_id)
+                        except JobRecordMissingError:
+                            logger.error(
+                                f"Job record missing for {client_id}/{job_id}; "
+                                "leaving message for redrive."
+                            )
+                            raise
 
                         if not lock_acquired:
                             logger.info(
@@ -320,7 +449,7 @@ def main():
 
                         try:
                             summary, is_truncated = process_document(
-                                bucket, key, receipt_handle
+                                client_id, job_id, bucket, key, receipt_handle
                             )
 
                             final_summary = summary
@@ -330,27 +459,50 @@ def main():
                                     + summary
                                 )
 
-                            update_job(
+                            completed = update_job(
                                 client_id,
                                 job_id,
                                 "COMPLETED",
                                 result_summary=final_summary,
+                                expected_status="PROCESSING",
                             )
-                            logger.info(
-                                f"Job {job_id} successfully completed for client {client_id}."
-                            )
+                            if completed:
+                                logger.info(
+                                    f"Job {job_id} successfully completed for client {client_id}."
+                                )
+                            else:
+                                logger.warning(
+                                    f"Job {job_id} was reclaimed by another worker "
+                                    "before COMPLETED could be written; leaving it alone."
+                                )
                         except (ClientError, BotoCoreError):
                             logger.exception(f"Retryable AWS error for job {job_id}.")
-                            update_job(client_id, job_id, "PENDING_UPLOAD")
-                            raise
-                        except Exception:
-                            logger.exception(f"Fatal error for job {job_id}.")
                             update_job(
                                 client_id,
                                 job_id,
-                                "FAILED",
-                                result_summary="Document processing failed",
+                                "PENDING_UPLOAD",
+                                expected_status="PROCESSING",
                             )
+                            raise
+                        except ValueError as e:
+                            logger.warning(f"Job {job_id} rejected: {e}")
+                            failed = update_job(
+                                client_id,
+                                job_id,
+                                "FAILED",
+                                result_summary=f"Document rejected: {e}",
+                                expected_status="PROCESSING",
+                            )
+                            if not failed:
+                                logger.warning(
+                                    f"Job {job_id} was reclaimed by another worker "
+                                    "before FAILED could be written; leaving it alone."
+                                )
+                        except Exception:
+                            logger.exception(
+                                f"Unhandled error for job {job_id}; leaving message for redrive."
+                            )
+                            raise
                         finally:
                             active_job.update(
                                 {
@@ -368,9 +520,8 @@ def main():
                         "AWS error occurred. Message left in queue for retry."
                     )
                 except Exception:
-                    logger.exception("Unexpected error processing message body.")
-                    sqs.delete_message(
-                        QueueUrl=settings.SQS_QUEUE_URL, ReceiptHandle=receipt_handle
+                    logger.exception(
+                        "Unexpected error processing message body; leaving message for redrive."
                     )
         except (ClientError, BotoCoreError):
             logger.exception("Critical SQS Polling error.")
