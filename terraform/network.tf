@@ -6,7 +6,6 @@
   - Subnet Architecture (Multi-AZ): 2 Public Subnets (for IGW, Jump Boxes, NATs) and 2 Private Subnets (for compute, databases, ALBs).
   - Route Tables: Distinct route tables for public routing (to IGW) and private routing (explicitly pointing internet-bound traffic to the respective AZ's NAT Instance network interface).
   - Interface VPC Endpoints: Deploys private AWS service endpoints (ECR, Logs, SQS, KMS, STS, Bedrock Runtime) directly into the private subnets.
-  - GuardDuty Telemetry Support: Explicitly includes 'ecs-agent' and 'ecs-telemetry' interface endpoints required for GuardDuty Fargate Runtime Monitoring.
 */
 
 // VPC 
@@ -157,9 +156,7 @@ locals {
     "sqs",
     "kms",
     "sts",
-    "bedrock-runtime",
-    "ecs-agent",    // Required for GuardDuty ECS_FARGATE_MANAGEMENT
-    "ecs-telemetry" // Required for GuardDuty ECS_FARGATE_MANAGEMNT
+    "bedrock-runtime"
   ]
 }
 
