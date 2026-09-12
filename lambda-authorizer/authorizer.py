@@ -1,5 +1,6 @@
 import os
 import hashlib
+import hmac
 import boto3
 import logging
 from botocore.exceptions import ClientError, BotoCoreError
@@ -32,7 +33,9 @@ def lambda_handler(event, context):
     headers = event.get("headers", {})
     origin_header = headers.get("x-origin-verify")
 
-    if origin_header != EXPECTED_ORIGIN_SECRET:
+    if not origin_header or not hmac.compare_digest(
+        origin_header, EXPECTED_ORIGIN_SECRET
+    ):
         logger.critical(
             "SECURITY ALERT: Request bypassed CloudFront/WAF. Missing or invalid X-Origin-Verify header."
         )
