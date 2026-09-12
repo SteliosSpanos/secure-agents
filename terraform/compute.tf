@@ -7,8 +7,8 @@
     * FastAPI API: Lightweight configuration (256 CPU / 512 MB) mapping port 8000.
     * Agent Worker: Robust configuration (512 CPU / 1024 MB) with a 120-second extended stop timeout to maximize graceful worker shutdown during AI processing tasks.
   - ECS Services:
-    * API Service: Configured with a static desired count of 2, safely tethered behind the private ALB target group.
-    * Worker Service: Lifecycle configured to ignore changes to 'desired_count', allowing external auto-scaling tracking to manage its state dynamically.
+    * API Service: Configured with a static desired count of 2, safely tethered behind the private ALB target group. Lifecycle ignores 'task_definition' so the CI/CD deploy pipeline (which registers new task definition revisions out-of-band) owns the running revision and Terraform does not revert it on the next apply.
+    * Worker Service: Lifecycle configured to ignore changes to 'desired_count' (external auto-scaling tracking manages it dynamically) and 'task_definition' (owned by the CI/CD deploy pipeline, same rationale as the API service).
   - Public Compute Infrastructure (Multi-AZ):
     * EC2 Jump Boxes: Deployed into distinct public subnets utilizing automated user-data scripts for operational transparency, attached to dedicated Elastic IPs.
     * EC2 NAT Instances: Act as custom NAT gateways running in public subnets with 'source_dest_check' disabled to properly masquerade private routing domain traffic out to the internet.
@@ -109,6 +109,15 @@ resource "aws_ecs_task_definition" "worker_task" {
         { name = "DYNAMODB_JOBS_TABLE", value = aws_dynamodb_table.jobs.name },
         { name = "BEDROCK_MODEL_ID", value = var.bedrock_model_id }
       ]
+
+      healthCheck = {
+        command     = ["CMD", "python", "-m", "app.healthcheck"]
+        interval    = 60
+        timeout     = 10
+        retries     = 3
+        startPeriod = 60
+      }
+
       logConfiguration = {
         logDriver = "awslogs"
         options = {
@@ -148,6 +157,10 @@ resource "aws_ecs_service" "api_service" {
     container_port   = 8000
   }
 
+  lifecycle {
+    ignore_changes = [task_definition]
+  }
+
   depends_on = [
     aws_lb_listener.api_listener,
     null_resource.api_bootstrap_image
@@ -174,7 +187,7 @@ resource "aws_ecs_service" "worker_service" {
   }
 
   lifecycle {
-    ignore_changes = [desired_count]
+    ignore_changes = [desired_count, task_definition]
   }
 
   depends_on = [null_resource.worker_bootstrap_image]
