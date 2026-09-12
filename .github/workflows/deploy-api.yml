@@ -45,7 +45,7 @@ jobs:
     uses: ./.github/workflows/reusable-checks.yml 
     with:
       working-directory: agent-api 
-      run-tests: false # Set this to true once a pytest suite exists 
+      run-tests: true
 
   deploy:
     name: Build and Deploy API 

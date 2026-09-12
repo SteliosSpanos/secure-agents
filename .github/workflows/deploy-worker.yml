@@ -42,7 +42,7 @@ jobs:
     uses: ./.github/workflows/reusable-checks.yml 
     with:
       working-directory: agent-worker
-      run-tests: false
+      run-tests: true
 
   deploy:
     name: Build and Deploy Worker 
