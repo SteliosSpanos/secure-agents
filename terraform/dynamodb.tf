@@ -174,6 +174,15 @@ resource "aws_lambda_event_source_mapping" "webhook_trigger" {
   maximum_retry_attempts         = 3
   bisect_batch_on_function_error = true // Isolates poison pill records
 
+  // The handler returns {"batchItemFailures": [...]} so only the records it could not process are retried
+  function_response_types = ["ReportBatchItemFailures"]
+
+  destination_config {
+    on_failure {
+      destination_arn = aws_sqs_queue.jobs_stream_dlq.arn
+    }
+  }
+
   filter_criteria {
     filter {
       pattern = jsonencode({
